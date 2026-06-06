@@ -1,5 +1,21 @@
 'use client'
 
+import {
+  BanknotesIcon,
+  BoltIcon,
+  CalendarDaysIcon,
+  ChartBarIcon,
+  CheckIcon,
+  ClockIcon,
+  Cog6ToothIcon,
+  PencilSquareIcon,
+  PlayIcon,
+  QueueListIcon,
+  Squares2X2Icon,
+  StopCircleIcon,
+  TrashIcon,
+  XMarkIcon
+} from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -80,10 +96,10 @@ type SummaryCardProps = {
 }
 
 const NAV_ITEMS: NavItemConfig[] = [
-  { view: 'dashboard', href: '/dashboard', label: 'Dashboard', icon: <GridIcon className="h-5 w-5" /> },
-  { view: 'entries', href: '/dashboard/entries', label: 'Entries', icon: <ListIcon className="h-5 w-5" /> },
-  { view: 'reports', href: '/dashboard/reports', label: 'Reports', icon: <ChartIcon className="h-5 w-5" /> },
-  { view: 'settings', href: '/dashboard/settings', label: 'Settings', icon: <SettingsIcon className="h-5 w-5" /> }
+  { view: 'dashboard', href: '/dashboard', label: 'Dashboard', icon: <Squares2X2Icon className="h-5 w-5" /> },
+  { view: 'entries', href: '/dashboard/entries', label: 'Entries', icon: <QueueListIcon className="h-5 w-5" /> },
+  { view: 'reports', href: '/dashboard/reports', label: 'Reports', icon: <ChartBarIcon className="h-5 w-5" /> },
+  { view: 'settings', href: '/dashboard/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" /> }
 ]
 
 const inputClassName =
@@ -196,23 +212,6 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
   const weeklyGoalProgress =
     settings.weeklyGoalHours <= 0 ? 0 : weekHours / settings.weeklyGoalHours
   const recentEntries = sortedEntries.slice(0, 6)
-  const longestShiftHours = useMemo(
-    () =>
-      sortedEntries.reduce((longest, entry) => {
-        const durationHours = getEntryDurationMs(entry) / HOUR_MS
-        return Math.max(longest, durationHours)
-      }, 0),
-    [sortedEntries]
-  )
-  const averageDailyHours = useMemo(() => {
-    const dailyDurations = buildDailyDurations(currentWeekEntries)
-    const values = Object.values(dailyDurations)
-    if (values.length === 0) {
-      return 0
-    }
-
-    return values.reduce((sum, value) => sum + value, 0) / values.length
-  }, [currentWeekEntries])
 
   const weeklyBars = useMemo(
     () => buildWeeklyChartData(sortedEntries, now, activeShiftDurationMs),
@@ -522,55 +521,6 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
     window.setTimeout(() => setSettingsNotice(null), 2500)
   }
 
-  async function resetDemoData() {
-    const defaultSettings = {
-      ...DEFAULT_SETTINGS,
-      workerName: settings.workerName || DEFAULT_SETTINGS.workerName
-    }
-
-    const { error: deleteError } = await supabase.from('time_entries').delete().eq('user_id', userId)
-    if (deleteError) {
-      setSettingsNotice(deleteError.message)
-      return
-    }
-
-    const { error: insertError } = await supabase.from('time_entries').insert(
-      INITIAL_ENTRIES.map((entry) => ({
-        id: entry.id,
-        user_id: userId,
-        start_at: entry.start,
-        end_at: entry.end,
-        source: entry.source,
-        note: entry.note ?? null
-      }))
-    )
-
-    if (insertError) {
-      setSettingsNotice(insertError.message)
-      return
-    }
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        worker_name: defaultSettings.workerName,
-        hourly_rate: defaultSettings.hourlyRate,
-        weekly_goal_hours: defaultSettings.weeklyGoalHours,
-        active_shift_start: null
-      })
-      .eq('user_id', userId)
-
-    if (profileError) {
-      setSettingsNotice(profileError.message)
-      return
-    }
-
-    setEntries(INITIAL_ENTRIES)
-    setSettings(defaultSettings)
-    setSettingsNotice('Demo data restored from Supabase.')
-    window.setTimeout(() => setSettingsNotice(null), 2500)
-  }
-
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
       {(isBusy || isRouteLoading) && <DashboardLoadingOverlay />}
@@ -820,7 +770,7 @@ function DashboardView({
               <div className="rounded-[26px] bg-slate-50 p-4 sm:p-5 lg:min-w-[280px]">
                 <div className="flex items-center gap-4">
                   <div className="grid h-20 w-20 place-items-center rounded-full bg-indigo-100 text-indigo-600">
-                    <ClockOutline className="h-10 w-10" />
+                    <ClockIcon className="h-10 w-10" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
@@ -845,7 +795,7 @@ function DashboardView({
                     onClick={onStopShift}
                     className="flex h-16 items-center justify-center gap-3 rounded-2xl bg-rose-500 px-6 text-lg font-bold text-white shadow-[0_14px_35px_rgba(67,56,202,0.2)] transition hover:bg-rose-600"
                   >
-                    <StopIcon className="h-5 w-5" />
+                    <StopCircleIcon className="h-5 w-5" />
                     Stop Shift
                   </button>
 
@@ -854,7 +804,7 @@ function DashboardView({
                     onClick={onAddManualEntry}
                     className="flex h-16 items-center justify-center gap-2 rounded-2xl bg-slate-100 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
                   >
-                    <CalendarPlus className="h-5 w-5" />
+                    <CalendarDaysIcon className="h-5 w-5" />
                     Add Manual Entry
                   </button>
                 </>
@@ -894,7 +844,7 @@ function DashboardView({
                     onClick={onAddManualEntry}
                     className="flex h-16 items-center justify-center gap-2 rounded-2xl bg-slate-100 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
                   >
-                    <CalendarPlus className="h-5 w-5" />
+                    <CalendarDaysIcon className="h-5 w-5" />
                     Add Manual Entry
                   </button>
                 </>
@@ -908,7 +858,7 @@ function DashboardView({
             title="Estimated Earnings"
             value={formatCurrency(projectedWeeklyPay)}
             hint={formatTrend(earningsTrend)}
-            icon={<WalletIcon className="h-5 w-5" />}
+            icon={<BanknotesIcon className="h-5 w-5" />}
             tone="indigo"
           />
           <SummaryCard
@@ -1023,7 +973,7 @@ function EntriesView({
           onClick={onAddManualEntry}
           className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700"
         >
-          <CalendarPlus className="h-4.5 w-4.5" />
+          <CalendarDaysIcon className="h-4.5 w-4.5" />
           Add Manual Entry
         </button>
       </div>
@@ -1067,7 +1017,7 @@ function EntriesView({
                     title="Edit entry"
                     className="inline-flex h-9 w-9 items-center justify-center rounded-full text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700"
                   >
-                    <EditIcon className="h-4 w-4" />
+                    <PencilSquareIcon className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
@@ -1103,7 +1053,7 @@ function EntriesView({
                 title="Edit entry"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full text-indigo-600 transition hover:bg-indigo-100 hover:text-indigo-700"
               >
-                <EditIcon className="h-4 w-4" />
+                <PencilSquareIcon className="h-4 w-4" />
               </button>
             </div>
             <div className="mt-4 flex items-center justify-between gap-4">
@@ -1345,21 +1295,21 @@ function ReportsView({
           title="Pay Period"
           value={formatDuration(currentPeriodHours)}
           hint="Tracked hours"
-          icon={<ClockOutline className="h-5 w-5" />}
+          icon={<ClockIcon className="h-5 w-5" />}
           tone="indigo"
         />
         <SummaryCard
           title="Projected Pay"
           value={formatCurrency(projectedPay)}
           hint="Using current hourly rate"
-          icon={<WalletIcon className="h-5 w-5" />}
+          icon={<BanknotesIcon className="h-5 w-5" />}
           tone="emerald"
         />
         <SummaryCard
           title="Average Day"
           value={formatDuration(averageDailyHours)}
           hint="Across tracked days"
-          icon={<ChartIcon className="h-5 w-5" />}
+          icon={<ChartBarIcon className="h-5 w-5" />}
           tone="slate"
         />
         <SummaryCard
@@ -1556,7 +1506,7 @@ function ManualEntryModal({
             onClick={onClose}
             className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-slate-600"
           >
-            <CloseIcon className="h-5 w-5" />
+            <XMarkIcon className="h-5 w-5" />
           </button>
         </div>
 
@@ -1659,7 +1609,7 @@ function DeleteEntryModal({
             disabled={isDeleting}
             className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-slate-600 disabled:opacity-50"
           >
-            <CloseIcon className="h-5 w-5" />
+            <XMarkIcon className="h-5 w-5" />
           </button>
         </div>
 
@@ -1716,7 +1666,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <div className="grid h-8 w-8 place-items-center rounded-full border border-indigo-200 text-indigo-600">
-        <ClockOutline className="h-4.5 w-4.5" />
+        <ClockIcon className="h-4.5 w-4.5" />
       </div>
       <span
         className={`font-extrabold leading-none tracking-[-0.03em] text-indigo-600 ${
@@ -1885,137 +1835,5 @@ function SettingsMetric({
       <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-extrabold tracking-[-0.04em] text-slate-900">{value}</p>
     </div>
-  )
-}
-
-type IconProps = {
-  className?: string
-}
-
-function ClockOutline({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M12 7.5v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function PlayIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <path d="M9 7.5v9l7-4.5-7-4.5Z" />
-    </svg>
-  )
-}
-
-function StopIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <rect x="7.5" y="7.5" width="9" height="9" rx="1.5" />
-    </svg>
-  )
-}
-
-function CheckIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-      <path d="m7 12.5 3.2 3.2L17 9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function CloseIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
-      <path d="m7 7 10 10M17 7 7 17" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function EditIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
-      <path d="m14 6 4 4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M6 18.2 7 14l8.7-8.7a1.8 1.8 0 0 1 2.6 0l.4.4a1.8 1.8 0 0 1 0 2.6L10 17l-4 1.2Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function TrashIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
-      <path d="M5.5 7.5h13M9.5 7.5V6a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M8.5 10.5v6M12 10.5v6M15.5 10.5v6" strokeLinecap="round" />
-      <path d="M7.5 7.5V18a1.5 1.5 0 0 0 1.5 1.5h6A1.5 1.5 0 0 0 16.5 18V7.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function CalendarPlus({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className={className}>
-      <rect x="4.5" y="6.5" width="15" height="13" rx="2.5" />
-      <path d="M8 4.5v4M16 4.5v4M4.5 10.5h15M12 13v4M10 15h4" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function WalletIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className={className}>
-      <rect x="3.5" y="7" width="17" height="10" rx="2.5" />
-      <path d="M6 7V5.7A1.7 1.7 0 0 1 7.7 4h7.8A1.5 1.5 0 0 1 17 5.5V7M15.5 12h2.5" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function BoltIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
-      <path d="M13.5 3.5 8.8 11H13l-2.5 9.5L15.2 13H11l2.5-9.5Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function GridIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className={className}>
-      <rect x="4" y="4" width="6.5" height="6.5" rx="1.2" />
-      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.2" />
-      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.2" />
-      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.2" />
-    </svg>
-  )
-}
-
-function ListIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className={className}>
-      <path d="M8 7h10M8 12h10M8 17h10M5 7h.01M5 12h.01M5 17h.01" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function ChartIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className={className}>
-      <path d="M5 19.5h14M8 16v-4M12 16V7.5M16 16v-6.5" strokeLinecap="round" />
-      <rect x="6.5" y="10.5" width="3" height="5.5" rx="1" />
-      <rect x="10.5" y="6" width="3" height="10" rx="1" />
-      <rect x="14.5" y="8.5" width="3" height="7.5" rx="1" />
-    </svg>
-  )
-}
-
-function SettingsIcon({ className }: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className={className}>
-      <path d="M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Z" />
-      <path
-        d="m19 12 .9-1.6-1.6-2.8-1.9.2a6.9 6.9 0 0 0-1.4-.8l-.8-1.7H9.8L9 7a6.9 6.9 0 0 0-1.4.8l-1.9-.2-1.6 2.8L5 12l-.9 1.6 1.6 2.8 1.9-.2c.43.33.9.6 1.4.8l.8 1.7h3.4l.8-1.7c.5-.2.97-.47 1.4-.8l1.9.2 1.6-2.8L19 12Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   )
 }
