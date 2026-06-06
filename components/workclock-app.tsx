@@ -1279,7 +1279,6 @@ function ReportsView({
                 ? `${filteredEntries.length} entries in selected pay period.`
                 : 'Select a valid date range.'}
             </p>
-            {reportNotice ? <p className="text-sm font-semibold text-amber-600">{reportNotice}</p> : null}
           </div>
           <button
             type="button"
