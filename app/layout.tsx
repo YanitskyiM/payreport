@@ -1,10 +1,35 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import './globals.css'
 
 export const metadata: Metadata = {
+  applicationName: 'PayReport',
   title: 'PayReport',
-  description: 'WorkClock dashboard backed by Next.js and Supabase'
+  description: 'Work hours tracker',
+  manifest: '/site.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'PayReport'
+  },
+  formatDetection: {
+    telephone: false
+  },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' }
+    ],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }]
+  }
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#4f46e5'
 }
 
 export default function RootLayout({
@@ -14,7 +39,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <div className="app-shell">{children}</div>
+      </body>
     </html>
   )
 }

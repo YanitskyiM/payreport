@@ -86,7 +86,7 @@ const NAV_ITEMS: NavItemConfig[] = [
 ]
 
 const inputClassName =
-  'h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100'
+  'h-12 min-w-0 w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100'
 
 export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppProps) {
   const supabase = useMemo(() => createClient(), [])
@@ -97,6 +97,8 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
   const [manualError, setManualError] = useState<string | null>(null)
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [deleteEntryTarget, setDeleteEntryTarget] = useState<Entry | null>(null)
+  const [isDeletingEntry, setIsDeletingEntry] = useState(false)
   const [isBusy, setIsBusy] = useState(true)
   const [now, setNow] = useState(() => new Date())
   const [pendingShift, setPendingShift] = useState<PendingShift | null>(null)
@@ -358,8 +360,13 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
     setPendingShift(null)
   }
 
+  function handleRequestDeleteEntry(entry: Entry) {
+    setDeleteEntryTarget(entry)
+  }
+
   async function handleDeleteEntry(id: string) {
     const previousEntries = entries
+    setIsDeletingEntry(true)
     setEntries((currentEntries) => currentEntries.filter((entry) => entry.id !== id))
 
     const { error } = await supabase.from('time_entries').delete().eq('id', id).eq('user_id', userId)
@@ -368,6 +375,9 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
       setEntries(previousEntries)
       setSettingsNotice(error.message)
     }
+
+    setIsDeletingEntry(false)
+    setDeleteEntryTarget(null)
   }
 
   function handleOpenNewManualEntry() {
@@ -627,7 +637,7 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
               <EntriesView
                 entries={sortedEntries}
                 onAddManualEntry={handleOpenNewManualEntry}
-                onDeleteEntry={(id) => void handleDeleteEntry(id)}
+                onDeleteEntry={handleRequestDeleteEntry}
                 onEditEntry={handleEditEntry}
               />
             ) : null}
@@ -676,6 +686,19 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
           onChange={setManualForm}
           onClose={() => setIsManualEntryOpen(false)}
           onSubmit={(event) => void handleSubmitManualEntry(event)}
+        />
+      ) : null}
+
+      {deleteEntryTarget ? (
+        <DeleteEntryModal
+          entry={deleteEntryTarget}
+          isDeleting={isDeletingEntry}
+          onCancel={() => {
+            if (!isDeletingEntry) {
+              setDeleteEntryTarget(null)
+            }
+          }}
+          onConfirm={() => void handleDeleteEntry(deleteEntryTarget.id)}
         />
       ) : null}
     </main>
@@ -945,7 +968,7 @@ function EntriesView({
 }: {
   entries: Entry[]
   onAddManualEntry: () => void
-  onDeleteEntry: (id: string) => void
+  onDeleteEntry: (entry: Entry) => void
   onEditEntry: (entry: Entry) => void
 }) {
   return (
@@ -998,20 +1021,26 @@ function EntriesView({
                 </td>
                 <td className="px-4 py-4 text-sm text-slate-600">{entry.note || '—'}</td>
                 <td className="px-4 py-4 text-right">
+                  <div className="flex justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => onEditEntry(entry)}
-                    className="mr-4 text-sm font-semibold text-indigo-600 transition hover:text-indigo-700"
+                    aria-label="Edit entry"
+                    title="Edit entry"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700"
                   >
-                    Edit
+                    <EditIcon className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDeleteEntry(entry.id)}
-                    className="text-sm font-semibold text-rose-500 transition hover:text-rose-600"
+                    onClick={() => onDeleteEntry(entry)}
+                    aria-label="Delete entry"
+                    title="Delete entry"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-rose-500 transition hover:bg-rose-50 hover:text-rose-600"
                   >
-                    Delete
+                    <TrashIcon className="h-4 w-4" />
                   </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1032,9 +1061,11 @@ function EntriesView({
               <button
                 type="button"
                 onClick={() => onEditEntry(entry)}
-                className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-600"
+                aria-label="Edit entry"
+                title="Edit entry"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-indigo-600 transition hover:bg-indigo-100 hover:text-indigo-700"
               >
-                Edit
+                <EditIcon className="h-4 w-4" />
               </button>
             </div>
             <div className="mt-4 flex items-center justify-between gap-4">
@@ -1044,17 +1075,21 @@ function EntriesView({
                 </p>
                 <p className="mt-1 text-sm text-slate-500">{entry.note || 'Shift entry'}</p>
               </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-600">
-                {entry.source}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-600">
+                  {entry.source}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onDeleteEntry(entry)}
+                  aria-label="Delete entry"
+                  title="Delete entry"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-rose-500 transition hover:bg-rose-100 hover:text-rose-600"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => onDeleteEntry(entry.id)}
-              className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-rose-500"
-            >
-              Delete
-            </button>
           </div>
         ))}
       </div>
@@ -1073,6 +1108,7 @@ function ReportsView({
 }) {
   const [startDate, setStartDate] = useState(() => defaultReportStartDate())
   const [endDate, setEndDate] = useState(() => formatInputDate(new Date()))
+  const [reportNotice, setReportNotice] = useState<string | null>(null)
 
   const filteredEntries = useMemo(() => {
     if (!startDate || !endDate || endDate < startDate) {
@@ -1125,11 +1161,6 @@ function ReportsView({
       return
     }
 
-    const reportWindow = window.open('', '_blank', 'noopener,noreferrer')
-    if (!reportWindow) {
-      return
-    }
-
     const rowsMarkup = filteredEntries
       .map((entry) => {
         const duration = formatDuration(getEntryDurationMs(entry) / HOUR_MS)
@@ -1139,26 +1170,42 @@ function ReportsView({
             <td>${escapeHtml(formatEntryDate(new Date(entry.start)))}</td>
             <td>${escapeHtml(formatTimeRange(entry))}</td>
             <td>${escapeHtml(duration)}</td>
-            <td>${escapeHtml(entry.source)}</td>
-            <td>${escapeHtml(entry.note || '—')}</td>
           </tr>
         `
       })
       .join('')
 
-    reportWindow.document.write(`
+    const reportMarkup = `
       <html>
         <head>
           <title>Pay Period Report</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
           <style>
             body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; }
             h1, h2, p { margin: 0; }
             .meta, .totals { margin-top: 16px; }
             .totals div { margin-bottom: 6px; }
+            .total-hours {
+              display: inline-block;
+              margin-top: 8px;
+              padding: 12px 16px;
+              border-radius: 14px;
+              background: #e0e7ff;
+              color: #312e81;
+              font-size: 18px;
+              font-weight: 700;
+            }
             table { width: 100%; border-collapse: collapse; margin-top: 24px; }
             th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; font-size: 12px; }
             th { background: #f8fafc; text-transform: uppercase; letter-spacing: 0.06em; }
           </style>
+          <script>
+            window.addEventListener('load', () => {
+              window.setTimeout(() => {
+                window.print()
+              }, 250)
+            })
+          </script>
         </head>
         <body>
           <h1>Accountant Pay Period Report</h1>
@@ -1168,9 +1215,7 @@ function ReportsView({
             <div><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString('en-US'))}</div>
           </div>
           <div class="totals">
-            <div><strong>Total hours:</strong> ${escapeHtml(formatDuration(currentPeriodHours))}</div>
-            <div><strong>Hourly rate:</strong> ${escapeHtml(formatCurrency(hourlyRate))}</div>
-            <div><strong>Total pay:</strong> ${escapeHtml(formatCurrency(projectedPay))}</div>
+            <div class="total-hours">Total hours: ${escapeHtml(formatDuration(currentPeriodHours))}</div>
           </div>
           <table>
             <thead>
@@ -1178,18 +1223,34 @@ function ReportsView({
                 <th>Date</th>
                 <th>Time</th>
                 <th>Duration</th>
-                <th>Source</th>
-                <th>Note</th>
               </tr>
             </thead>
             <tbody>${rowsMarkup}</tbody>
           </table>
         </body>
       </html>
-    `)
-    reportWindow.document.close()
-    reportWindow.focus()
-    reportWindow.print()
+    `
+
+    setReportNotice(null)
+
+    const reportWindow = window.open('', '_blank')
+    if (reportWindow) {
+      reportWindow.document.open()
+      reportWindow.document.write(reportMarkup)
+      reportWindow.document.close()
+      return
+    }
+
+    const reportBlob = new Blob([reportMarkup], { type: 'text/html' })
+    const reportUrl = URL.createObjectURL(reportBlob)
+    const downloadLink = document.createElement('a')
+    downloadLink.href = reportUrl
+    downloadLink.download = `pay-period-report-${startDate}-to-${endDate}.html`
+    document.body.append(downloadLink)
+    downloadLink.click()
+    downloadLink.remove()
+    window.setTimeout(() => URL.revokeObjectURL(reportUrl), 1000)
+    setReportNotice('Popup blocked. Downloaded the printable report instead.')
   }
 
   return (
@@ -1222,11 +1283,14 @@ function ReportsView({
           </div>
         </div>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-500">
-            {rangeIsValid
-              ? `${filteredEntries.length} entries in selected pay period.`
-              : 'Select a valid date range.'}
-          </p>
+          <div className="space-y-1">
+            <p className="text-sm text-slate-500">
+              {rangeIsValid
+                ? `${filteredEntries.length} entries in selected pay period.`
+                : 'Select a valid date range.'}
+            </p>
+            {reportNotice ? <p className="text-sm font-semibold text-amber-600">{reportNotice}</p> : null}
+          </div>
           <button
             type="button"
             onClick={handleGeneratePdf}
@@ -1440,8 +1504,8 @@ function ManualEntryModal({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   return (
-    <div className="fixed inset-0 z-30 flex items-end bg-slate-950/40 p-3 sm:items-center sm:justify-center">
-      <div className="w-full max-w-lg rounded-[28px] bg-white p-5 shadow-[0_30px_80px_rgba(15,23,42,0.25)] sm:p-6">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/40 p-3">
+      <div className="w-full max-w-lg overflow-hidden rounded-[28px] bg-white p-5 shadow-[0_30px_80px_rgba(15,23,42,0.25)] sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-slate-500">{entryLabel}</p>
@@ -1525,6 +1589,65 @@ function ManualEntryModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+function DeleteEntryModal({
+  entry,
+  isDeleting,
+  onCancel,
+  onConfirm
+}: {
+  entry: Entry
+  isDeleting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-3">
+      <div className="w-full max-w-md overflow-hidden rounded-[28px] bg-white p-5 shadow-[0_30px_80px_rgba(15,23,42,0.25)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-rose-500">Delete entry</p>
+            <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
+              Confirm deletion
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-slate-600 disabled:opacity-50"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <p className="mt-6 text-sm text-slate-600">
+          Delete the entry for {formatEntryDate(new Date(entry.start))} ({formatTimeRange(entry)})?
+          This action cannot be undone.
+        </p>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-100 px-5 text-sm font-semibold text-slate-700 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="inline-flex h-12 items-center justify-center rounded-2xl bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {isDeleting ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1665,7 +1788,7 @@ function Field({
   children: ReactNode
 }) {
   return (
-    <label className="block">
+    <label className="block min-w-0">
       <span className="mb-2 block text-sm font-semibold text-slate-600">{label}</span>
       {children}
     </label>
@@ -1728,6 +1851,24 @@ function CloseIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
       <path d="m7 7 10 10M17 7 7 17" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function EditIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
+      <path d="m14 6 4 4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 18.2 7 14l8.7-8.7a1.8 1.8 0 0 1 2.6 0l.4.4a1.8 1.8 0 0 1 0 2.6L10 17l-4 1.2Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function TrashIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
+      <path d="M5.5 7.5h13M9.5 7.5V6a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M8.5 10.5v6M12 10.5v6M15.5 10.5v6" strokeLinecap="round" />
+      <path d="M7.5 7.5V18a1.5 1.5 0 0 0 1.5 1.5h6A1.5 1.5 0 0 0 16.5 18V7.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

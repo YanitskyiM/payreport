@@ -164,7 +164,19 @@ export function formatCurrency(value: number): string {
 }
 
 export function formatDuration(hours: number): string {
-  return `${hours.toFixed(2)}h`
+  const totalMinutes = Math.max(0, Math.round(hours * 60))
+  const wholeHours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+
+  if (wholeHours === 0) {
+    return `${minutes}m`
+  }
+
+  if (minutes === 0) {
+    return `${wholeHours}h`
+  }
+
+  return `${wholeHours}h ${minutes}m`
 }
 
 export function formatElapsedTimer(durationMs: number): string {
@@ -181,7 +193,7 @@ export function formatElapsedTimer(durationMs: number): string {
 }
 
 export function formatShortHours(hours: number): string {
-  return `${hours.toFixed(1)}h`
+  return formatDuration(hours)
 }
 
 export function formatLongDate(date: Date): string {
