@@ -6,6 +6,7 @@ import {
   CalendarDaysIcon,
   ChartBarIcon,
   CheckIcon,
+  ChevronDownIcon,
   ClockIcon,
   Cog6ToothIcon,
   PencilSquareIcon,
@@ -97,8 +98,8 @@ type SummaryCardProps = {
 
 const NAV_ITEMS: NavItemConfig[] = [
   { view: 'dashboard', href: '/dashboard', label: 'Dashboard', icon: <Squares2X2Icon className="h-5 w-5" /> },
-  { view: 'entries', href: '/dashboard/entries', label: 'Entries', icon: <QueueListIcon className="h-5 w-5" /> },
   { view: 'reports', href: '/dashboard/reports', label: 'Reports', icon: <ChartBarIcon className="h-5 w-5" /> },
+  { view: 'entries', href: '/dashboard/entries', label: 'Entries', icon: <QueueListIcon className="h-5 w-5" /> },
   { view: 'settings', href: '/dashboard/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" /> }
 ]
 
@@ -1152,6 +1153,7 @@ function ReportsView({
   const [endDate, setEndDate] = useState(() => formatInputDate(new Date()))
   const [activePresetLabel, setActivePresetLabel] = useState<string | null>(null)
   const [reportNotice, setReportNotice] = useState<string | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filteredEntries = useMemo(() => {
     if (!startDate || !endDate || endDate < startDate) {
@@ -1220,75 +1222,87 @@ function ReportsView({
   return (
     <section className="space-y-6">
       <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
           <div>
             <p className="text-sm font-semibold text-slate-500">Pay period</p>
             <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
               Report range
             </h2>
-            <p className="mt-2 text-sm text-slate-500">{reportRangeLabel}</p>
+            <p className="mt-1 text-sm text-slate-500">{reportRangeLabel}</p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:min-w-[420px]">
-            <Field label="Start date">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(event) => { setStartDate(event.target.value); setActivePresetLabel(null) }}
-                className={inputClassName}
-              />
-            </Field>
-            <Field label="End date">
-              <input
-                type="date"
-                value={endDate}
-                onChange={(event) => { setEndDate(event.target.value); setActivePresetLabel(null) }}
-                className={inputClassName}
-              />
-            </Field>
-          </div>
-        </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {presetRanges.map((preset) => {
-            const isActive = activePresetLabel === preset.label
+          <ChevronDownIcon
+            className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
 
-            return (
+        {filtersOpen && (
+          <>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:min-w-[420px]">
+              <Field label="Start date">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => { setStartDate(event.target.value); setActivePresetLabel(null) }}
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="End date">
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => { setEndDate(event.target.value); setActivePresetLabel(null) }}
+                  className={inputClassName}
+                />
+              </Field>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {presetRanges.map((preset) => {
+                const isActive = activePresetLabel === preset.label
+
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      setStartDate(preset.startDate)
+                      setEndDate(preset.endDate)
+                      setActivePresetLabel(preset.label)
+                      setReportNotice(null)
+                    }}
+                    className={`inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
+                      isActive
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm text-slate-500">
+                  {rangeIsValid
+                    ? `${filteredEntries.length} entries in selected pay period.`
+                    : 'Select a valid date range.'}
+                </p>
+              </div>
               <button
-                key={preset.label}
                 type="button"
-                onClick={() => {
-                  setStartDate(preset.startDate)
-                  setEndDate(preset.endDate)
-                  setActivePresetLabel(preset.label)
-                  setReportNotice(null)
-                }}
-                className={`inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
-                  isActive
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
+                onClick={handleGeneratePdf}
+                disabled={!rangeIsValid}
+                className="inline-flex h-12 items-center justify-center rounded-2xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {preset.label}
+                Download PDF Report
               </button>
-            )
-          })}
-        </div>
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-slate-500">
-              {rangeIsValid
-                ? `${filteredEntries.length} entries in selected pay period.`
-                : 'Select a valid date range.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleGeneratePdf}
-            disabled={!rangeIsValid}
-            className="inline-flex h-12 items-center justify-center rounded-2xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            Download PDF Report
-          </button>
-        </div>
+            </div>
+          </>
+        )}
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
