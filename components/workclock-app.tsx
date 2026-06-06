@@ -20,7 +20,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
-import { useStandaloneMode } from '@/hooks/use-standalone-mode'
 import { createClient } from '@/lib/supabase/client'
 import {
   HOUR_MS,
@@ -43,6 +42,7 @@ import {
   getViewFromPathname,
   getEntryDurationMs,
   getPageTitle,
+  getStartOfWeek,
   goalHint,
   isDateInCurrentWeek,
   isDateInPreviousWeek,
@@ -646,6 +646,8 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
                 weekHours={weekHours}
                 weeklyBars={weeklyBars}
                 weeklyGoalProgress={weeklyGoalProgress}
+                onDeleteEntry={handleRequestDeleteEntry}
+                onEditEntry={handleEditEntry}
               />
             ) : null}
 
@@ -757,7 +759,9 @@ function DashboardView({
   todayHours,
   weekHours,
   weeklyBars,
-  weeklyGoalProgress
+  weeklyGoalProgress,
+  onDeleteEntry,
+  onEditEntry
 }: {
   activeShiftDurationMs: number
   activeShiftStart: string | null
@@ -775,6 +779,8 @@ function DashboardView({
   weekHours: number
   weeklyBars: WeeklyBar[]
   weeklyGoalProgress: number
+  onDeleteEntry: (entry: Entry) => void
+  onEditEntry: (entry: Entry) => void
 }) {
   return (
     <section className="space-y-6">
@@ -952,7 +958,7 @@ function DashboardView({
                 key={entry.id}
                 className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-slate-900">
                     {entry.note || 'Shift entry'}
                   </p>
@@ -960,13 +966,33 @@ function DashboardView({
                     {formatEntryDate(new Date(entry.start))} • {formatTimeRange(entry)}
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-slate-900">
-                    {formatDuration(getEntryDurationMs(entry) / HOUR_MS)}
-                  </p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
-                    {entry.source}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-slate-900">
+                      {formatDuration(getEntryDurationMs(entry) / HOUR_MS)}
+                    </p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
+                      {entry.source}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onEditEntry(entry)}
+                    aria-label="Edit recent entry"
+                    title="Edit entry"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-indigo-600 transition hover:bg-indigo-100 hover:text-indigo-700"
+                  >
+                    <PencilSquareIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteEntry(entry)}
+                    aria-label="Delete recent entry"
+                    title="Delete entry"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-rose-500 transition hover:bg-rose-100 hover:text-rose-600"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1123,7 +1149,6 @@ function ReportsView({
   hourlyRate: number
   workerName: string
 }) {
-  const isStandaloneMode = useStandaloneMode()
   const [startDate, setStartDate] = useState(() => defaultReportStartDate())
   const [endDate, setEndDate] = useState(() => formatInputDate(new Date()))
   const [reportNotice, setReportNotice] = useState<string | null>(null)
@@ -1173,117 +1198,23 @@ function ReportsView({
         fullDate: formatEntryDate(new Date(`${dateKey}T12:00:00`))
       }))
   }, [filteredEntries])
-
-  function downloadPrintableReport(reportMarkup: string, filename: string, notice: string) {
-    const reportBlob = new Blob([reportMarkup], { type: 'text/html' })
-    const reportUrl = URL.createObjectURL(reportBlob)
-    const downloadLink = document.createElement('a')
-    downloadLink.href = reportUrl
-    downloadLink.download = filename
-    document.body.append(downloadLink)
-    downloadLink.click()
-    downloadLink.remove()
-    window.setTimeout(() => URL.revokeObjectURL(reportUrl), 1000)
-    setReportNotice(notice)
-  }
+  const reportRangeLabel = rangeIsValid ? formatReportRangeLabel(startDate, endDate) : 'Select a valid range'
+  const presetRanges = useMemo(() => buildReportPresetRanges(), [])
 
   function handleGeneratePdf() {
     if (!rangeIsValid) {
       return
     }
 
-    const rowsMarkup = filteredEntries
-      .map((entry) => {
-        const duration = formatDuration(getEntryDurationMs(entry) / HOUR_MS)
+    const reportBytes = createPayPeriodPdf({
+      endDate,
+      entries: filteredEntries,
+      startDate,
+      workerName
+    })
 
-        return `
-          <tr>
-            <td>${escapeHtml(formatEntryDate(new Date(entry.start)))}</td>
-            <td>${escapeHtml(formatTimeRange(entry))}</td>
-            <td>${escapeHtml(duration)}</td>
-          </tr>
-        `
-      })
-      .join('')
-
-    const reportMarkup = `
-      <html>
-        <head>
-          <title>Pay Period Report</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <style>
-            body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; }
-            h1, h2, p { margin: 0; }
-            .meta, .totals { margin-top: 16px; }
-            .totals div { margin-bottom: 6px; }
-            .total-hours {
-              display: inline-block;
-              margin-top: 8px;
-              padding: 12px 16px;
-              border-radius: 14px;
-              background: #e0e7ff;
-              color: #312e81;
-              font-size: 18px;
-              font-weight: 700;
-            }
-            table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-            th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; font-size: 12px; }
-            th { background: #f8fafc; text-transform: uppercase; letter-spacing: 0.06em; }
-          </style>
-          <script>
-            window.addEventListener('load', () => {
-              window.setTimeout(() => {
-                window.print()
-              }, 250)
-            })
-          </script>
-        </head>
-        <body>
-          <h1>Accountant Pay Period Report</h1>
-          <div class="meta">
-            <div><strong>Worker:</strong> ${escapeHtml(workerName || 'Not set')}</div>
-            <div><strong>Period:</strong> ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</div>
-            <div><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString('en-US'))}</div>
-          </div>
-          <div class="totals">
-            <div class="total-hours">Total hours: ${escapeHtml(formatDuration(currentPeriodHours))}</div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Duration</th>
-              </tr>
-            </thead>
-            <tbody>${rowsMarkup}</tbody>
-          </table>
-        </body>
-      </html>
-    `
-
-    setReportNotice(null)
-
-    const fileName = `pay-period-report-${startDate}-to-${endDate}.html`
-
-    if (isStandaloneMode) {
-      downloadPrintableReport(
-        reportMarkup,
-        fileName,
-        'Downloaded the printable report to avoid trapping the app in a separate PWA window.'
-      )
-      return
-    }
-
-    const reportWindow = window.open('', '_blank')
-    if (reportWindow) {
-      reportWindow.document.open()
-      reportWindow.document.write(reportMarkup)
-      reportWindow.document.close()
-      return
-    }
-
-    downloadPrintableReport(reportMarkup, fileName, 'Popup blocked. Downloaded the printable report instead.')
+    const opened = openPdfReport(reportBytes)
+    setReportNotice(opened ? null : 'Popup blocked. Allow popups to open the PDF preview.')
   }
 
   return (
@@ -1293,8 +1224,9 @@ function ReportsView({
           <div>
             <p className="text-sm font-semibold text-slate-500">Pay period</p>
             <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
-              Filter report range
+              Report range
             </h2>
+            <p className="mt-2 text-sm text-slate-500">{reportRangeLabel}</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:min-w-[420px]">
             <Field label="Start date">
@@ -1315,6 +1247,30 @@ function ReportsView({
             </Field>
           </div>
         </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {presetRanges.map((preset) => {
+            const isActive = startDate === preset.startDate && endDate === preset.endDate
+
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  setStartDate(preset.startDate)
+                  setEndDate(preset.endDate)
+                  setReportNotice(null)
+                }}
+                className={`inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
+                  isActive
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {preset.label}
+              </button>
+            )
+          })}
+        </div>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <p className="text-sm text-slate-500">
@@ -1330,7 +1286,7 @@ function ReportsView({
             disabled={!rangeIsValid}
             className="inline-flex h-12 items-center justify-center rounded-2xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            {isStandaloneMode ? 'Download Accountant Report' : 'Generate Accountant PDF'}
+            Download PDF Report
           </button>
         </div>
       </section>
@@ -1694,17 +1650,290 @@ function defaultReportStartDate() {
   return formatInputDate(date)
 }
 
-function toInputTime(date: Date) {
-  return `${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`
+function buildReportPresetRanges() {
+  const now = new Date()
+
+  return [
+    createReportPreset('Last 7 days', addDays(now, -6), now),
+    createReportPreset('This week', getStartOfWeek(now), now),
+    createReportPreset('Last week', addDays(getStartOfWeek(now), -7), addDays(getStartOfWeek(now), -1)),
+    createReportPreset('This month', getStartOfMonth(now), now),
+    createReportPreset('Last month', getStartOfPreviousMonth(now), getEndOfPreviousMonth(now))
+  ]
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+function createReportPreset(label: string, start: Date, end: Date) {
+  return {
+    label,
+    startDate: formatInputDate(start),
+    endDate: formatInputDate(end)
+  }
+}
+
+function formatReportRangeLabel(startDate: string, endDate: string) {
+  return `${formatLongDate(new Date(`${startDate}T12:00:00`))} – ${formatLongDate(
+    new Date(`${endDate}T12:00:00`)
+  )}`
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function getStartOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function getStartOfPreviousMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth() - 1, 1)
+}
+
+function getEndOfPreviousMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 0)
+}
+
+function openPdfReport(reportBytes: Uint8Array) {
+  const reportBuffer = new Uint8Array(reportBytes).buffer as ArrayBuffer
+  const reportBlob = new Blob([reportBuffer], { type: 'application/pdf' })
+  const reportUrl = URL.createObjectURL(reportBlob)
+  const previewWindow = window.open(reportUrl, '_blank', 'noopener,noreferrer')
+
+  if (!previewWindow) {
+    window.setTimeout(() => URL.revokeObjectURL(reportUrl), 1000)
+    return false
+  }
+
+  window.setTimeout(() => URL.revokeObjectURL(reportUrl), 60_000)
+  return true
+}
+
+function createPayPeriodPdf({
+  endDate,
+  entries,
+  startDate,
+  workerName
+}: {
+  endDate: string
+  entries: Entry[]
+  startDate: string
+  workerName: string
+}) {
+  const pageWidth = 612
+  const pageHeight = 792
+  const marginLeft = 44
+  const marginRight = 44
+  const topStart = 730
+  const bottomMargin = 52
+  const rowHeight = 34
+  const contentWidth = pageWidth - marginLeft - marginRight
+  const dateColumnX = marginLeft + 16
+  const timeColumnX = marginLeft + 200
+  const durationColumnX = marginLeft + 430
+  const totalHours = entries.reduce((sum, entry) => sum + getEntryDurationMs(entry), 0) / HOUR_MS
+
+  const rows = entries.map((entry) => ({
+    date: formatEntryDate(new Date(entry.start)),
+    time: formatPdfTimeRange(entry),
+    duration: formatDuration(getEntryDurationMs(entry) / HOUR_MS)
+  }))
+
+  const pages: string[] = []
+  let rowIndex = 0
+
+  while (rowIndex < rows.length || pages.length === 0) {
+    let cursorY = topStart
+    let content = ''
+
+    content += pdfRect(marginLeft, cursorY - 56, contentWidth, 78, '0.12 0.16 0.28 rg')
+    content += pdfText('Pay Period Report', marginLeft + 20, cursorY - 2, 22, {
+      color: '1 1 1 rg',
+      font: 'bold'
+    })
+    content += pdfText('Tracked work summary', marginLeft + 20, cursorY - 22, 10, {
+      color: '0.82 0.87 0.96 rg'
+    })
+    cursorY -= 108
+
+    content += pdfRect(marginLeft, cursorY - 8, contentWidth / 2 - 8, 48, '0.96 0.97 0.99 rg')
+    content += pdfRect(marginLeft + contentWidth / 2 + 8, cursorY - 8, contentWidth / 2 - 8, 48, '0.96 0.97 0.99 rg')
+    content += pdfText('WORKER', marginLeft + 16, cursorY + 22, 9, {
+      color: '0.39 0.45 0.58 rg',
+      font: 'bold'
+    })
+    content += pdfText(workerName || 'Not set', marginLeft + 16, cursorY + 6, 12, {
+      font: 'bold'
+    })
+    content += pdfText('RANGE', marginLeft + contentWidth / 2 + 24, cursorY + 22, 9, {
+      color: '0.39 0.45 0.58 rg',
+      font: 'bold'
+    })
+    content += pdfText(formatPdfDateRange(startDate, endDate), marginLeft + contentWidth / 2 + 24, cursorY + 6, 12, {
+      font: 'bold'
+    })
+    cursorY -= 40
+    content += pdfStrokeLine(marginLeft, cursorY - 8, pageWidth - marginRight, cursorY - 8, '0.84 G')
+    cursorY -= 38
+
+    content += pdfRect(marginLeft, cursorY - 24, contentWidth, 34, '0.21 0.27 0.40 rg')
+    content += pdfText('DATE', dateColumnX, cursorY - 4, 10, {
+      color: '1 1 1 rg',
+      font: 'bold'
+    })
+    content += pdfText('TIME', timeColumnX, cursorY - 4, 10, {
+      color: '1 1 1 rg',
+      font: 'bold'
+    })
+    content += pdfText('HOURS', durationColumnX, cursorY - 4, 10, {
+      color: '1 1 1 rg',
+      font: 'bold'
+    })
+    cursorY -= 42
+
+    while (rowIndex < rows.length && cursorY > bottomMargin + rowHeight * 2) {
+      const row = rows[rowIndex]
+      if (rowIndex % 2 === 0) {
+        content += pdfRect(marginLeft, cursorY - 20, contentWidth, 28, '0.985 0.988 0.995 rg')
+      }
+
+      content += pdfText(row.date, dateColumnX, cursorY, 10, {
+        font: 'bold'
+      })
+      content += pdfText(row.time, timeColumnX, cursorY, 10)
+      content += pdfText(row.duration, durationColumnX, cursorY, 10, {
+        font: 'bold'
+      })
+      content += pdfStrokeLine(marginLeft, cursorY - 14, pageWidth - marginRight, cursorY - 14, '0.88 G')
+      cursorY -= rowHeight
+      rowIndex += 1
+    }
+
+    if (rowIndex >= rows.length) {
+      const totalBoxY = Math.max(cursorY - 38, 58)
+      content += pdfRect(marginLeft, totalBoxY, contentWidth, 56, '0.89 0.93 0.99 rg')
+      content += pdfText('TOTAL HOURS', marginLeft + 18, totalBoxY + 33, 11, {
+        color: '0.21 0.27 0.40 rg',
+        font: 'bold'
+      })
+      content += pdfText(formatDuration(totalHours), durationColumnX, totalBoxY + 33, 14, {
+        font: 'bold'
+      })
+    }
+
+    pages.push(content)
+  }
+
+  return buildPdfDocument({
+    pageHeight,
+    pageWidth,
+    pages
+  })
+}
+
+function buildPdfDocument({
+  pageHeight,
+  pageWidth,
+  pages
+}: {
+  pageHeight: number
+  pageWidth: number
+  pages: string[]
+}) {
+  const objects: string[] = []
+  const pageObjectNumbers: number[] = []
+
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>')
+  objects.push('')
+
+  for (const pageContent of pages) {
+    const contentObjectNumber = objects.length + 1
+    const contentStream = toPdfBytes(pageContent)
+    objects.push(
+      `<< /Length ${contentStream.length} >>\nstream\n${pageContent}\nendstream`
+    )
+
+    const pageObjectNumber = objects.length + 1
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> /Contents ${contentObjectNumber} 0 R >>`
+    )
+    pageObjectNumbers.push(pageObjectNumber)
+  }
+
+  objects[1] = `<< /Type /Pages /Kids [${pageObjectNumbers.map((value) => `${value} 0 R`).join(' ')}] /Count ${pageObjectNumbers.length} >>`
+
+  let pdf = '%PDF-1.4\n'
+  const offsets: number[] = [0]
+
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+
+  const xrefOffset = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n`
+  pdf += '0000000000 65535 f \n'
+
+  for (let index = 1; index <= objects.length; index += 1) {
+    pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`
+  }
+
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+
+  return toPdfBytes(pdf)
+}
+
+function pdfText(
+  value: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  options?: {
+    color?: string
+    font?: 'regular' | 'bold'
+  }
+) {
+  const fontName = options?.font === 'bold' ? 'F2' : 'F1'
+  const colorCommand = options?.color ? `${options.color} ` : ''
+  return `q ${colorCommand}BT /${fontName} ${fontSize} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdfText(value)}) Tj ET Q\n`
+}
+
+function pdfLine(startX: number, startY: number, endX: number, endY: number) {
+  return pdfStrokeLine(startX, startY, endX, endY, '0.8 G')
+}
+
+function pdfRect(x: number, y: number, width: number, height: number, fillColorCommand: string) {
+  return `q ${fillColorCommand} ${x} ${y} ${width} ${height} re f Q\n`
+}
+
+function pdfStrokeLine(startX: number, startY: number, endX: number, endY: number, strokeColorCommand: string) {
+  return `q ${strokeColorCommand} ${startX} ${startY} m ${endX} ${endY} l S Q\n`
+}
+
+function escapePdfText(value: string) {
+  return sanitizePdfText(value).replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)')
+}
+
+function sanitizePdfText(value: string) {
+  return value.replaceAll(/[^\x20-\x7E]/g, '?')
+}
+
+function toPdfBytes(value: string) {
+  return new TextEncoder().encode(value)
+}
+
+function formatPdfTimeRange(entry: Entry) {
+  return `${formatTime(new Date(entry.start))} - ${formatTime(new Date(entry.end))}`
+}
+
+function formatPdfDateRange(startDate: string, endDate: string) {
+  return `${formatEntryDate(new Date(`${startDate}T12:00:00`))} - ${formatEntryDate(
+    new Date(`${endDate}T12:00:00`)
+  )}`
+}
+
+function toInputTime(date: Date) {
+  return `${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
