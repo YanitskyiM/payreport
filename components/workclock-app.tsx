@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { usePathname } from 'next/navigation'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -22,6 +23,7 @@ import {
   formatTime,
   formatTimeRange,
   formatTrend,
+  getViewFromPathname,
   getEntryDurationMs,
   getPageTitle,
   goalHint,
@@ -59,7 +61,6 @@ type EntryRow = {
 }
 
 type WorkClockAppProps = {
-  currentView: View
   userEmail: string
   userId: string
 }
@@ -88,8 +89,10 @@ const NAV_ITEMS: NavItemConfig[] = [
 const inputClassName =
   'h-12 min-w-0 w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100'
 
-export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppProps) {
+export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
   const supabase = useMemo(() => createClient(), [])
+  const pathname = usePathname()
+  const routeLoadingTimeoutRef = useRef<number | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false)
@@ -100,11 +103,13 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<Entry | null>(null)
   const [isDeletingEntry, setIsDeletingEntry] = useState(false)
   const [isBusy, setIsBusy] = useState(true)
+  const [isRouteLoading, setIsRouteLoading] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const [pendingShift, setPendingShift] = useState<PendingShift | null>(null)
   const [manualForm, setManualForm] = useState<ManualFormState>(() =>
     createDefaultManualForm(new Date())
   )
+  const currentView = getViewFromPathname(pathname)
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -125,6 +130,23 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
   useEffect(() => {
     void loadData()
   }, [userId])
+
+  useEffect(() => {
+    return () => {
+      if (routeLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(routeLoadingTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (routeLoadingTimeoutRef.current !== null) {
+      window.clearTimeout(routeLoadingTimeoutRef.current)
+      routeLoadingTimeoutRef.current = null
+    }
+
+    setIsRouteLoading(false)
+  }, [pathname])
 
   const sortedEntries = useMemo(
     () =>
@@ -198,6 +220,19 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
   )
 
   const pageTitle = getPageTitle(currentView)
+
+  function handleNavigationStart(href: string) {
+    if (href !== pathname) {
+      if (routeLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(routeLoadingTimeoutRef.current)
+      }
+
+      routeLoadingTimeoutRef.current = window.setTimeout(() => {
+        setIsRouteLoading(true)
+        routeLoadingTimeoutRef.current = null
+      }, 180)
+    }
+  }
 
   async function loadData() {
     setIsBusy(true)
@@ -536,44 +571,46 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
     window.setTimeout(() => setSettingsNotice(null), 2500)
   }
 
-  if (isBusy) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-slate-100 px-4 py-10 text-slate-600">
-        Loading your Supabase workspace…
-      </main>
-    )
-  }
-
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col lg:flex-row">
-        <aside className="hidden w-[280px] flex-col border-r border-slate-200 bg-white px-6 py-8 lg:flex">
-          <Brand />
-          <div className="mt-10 space-y-2">
-            {NAV_ITEMS.map((item) => (
-              <SidebarNavItem
-                key={item.view}
-                active={currentView === item.view}
-                href={item.href}
-                icon={item.icon}
-                label={item.label}
-              />
-            ))}
-          </div>
+      {(isBusy || isRouteLoading) && <DashboardLoadingOverlay />}
+      <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col lg:flex-row lg:gap-6 lg:px-6 lg:py-6">
+        <aside className="hidden w-[280px] shrink-0 lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)] lg:h-[calc(100dvh-3rem)]">
+          <div className="flex h-full w-full flex-col rounded-[32px] border border-slate-200 bg-white px-6 py-8 shadow-sm">
+            <Brand />
 
-          <section className="mt-auto rounded-3xl bg-gradient-to-br from-indigo-600 to-indigo-500 p-5 text-white shadow-[0_20px_50px_rgba(67,56,202,0.25)]">
-            <p className="text-sm font-semibold text-indigo-100">Active status</p>
-            <p className="mt-2 text-2xl font-extrabold">
-              {settings.activeShiftStart
-                ? formatElapsedTimer(activeShiftDurationMs)
-                : 'Off shift'}
-            </p>
-            <p className="mt-2 text-sm text-indigo-100">
-              {settings.activeShiftStart
-                ? `Started ${formatTime(new Date(settings.activeShiftStart))}`
-                : 'Start a shift to track hours live.'}
-            </p>
-          </section>
+            <nav className="mt-10" aria-label="Desktop navigation">
+              <p className="px-4 text-[0.68rem] font-bold uppercase tracking-[0.24em] text-slate-400">
+                Navigation
+              </p>
+              <div className="mt-4 space-y-2">
+                {NAV_ITEMS.map((item) => (
+                  <SidebarNavItem
+                    key={item.view}
+                    active={currentView === item.view}
+                    href={item.href}
+                    icon={item.icon}
+                    label={item.label}
+                    onNavigate={handleNavigationStart}
+                  />
+                ))}
+              </div>
+            </nav>
+
+            <section className="mt-auto rounded-3xl bg-gradient-to-br from-indigo-600 to-indigo-500 p-5 text-white shadow-[0_20px_50px_rgba(67,56,202,0.25)]">
+              <p className="text-sm font-semibold text-indigo-100">Active status</p>
+              <p className="mt-2 text-2xl font-extrabold">
+                {settings.activeShiftStart
+                  ? formatElapsedTimer(activeShiftDurationMs)
+                  : 'Off shift'}
+              </p>
+              <p className="mt-2 text-sm text-indigo-100">
+                {settings.activeShiftStart
+                  ? `Started ${formatTime(new Date(settings.activeShiftStart))}`
+                  : 'Start a shift to track hours live.'}
+              </p>
+            </section>
+          </div>
         </aside>
 
         <div className="flex flex-1 flex-col">
@@ -672,6 +709,7 @@ export function WorkClockApp({ currentView, userEmail, userId }: WorkClockAppPro
               href={item.href}
               icon={item.icon}
               label={item.label}
+              onNavigate={handleNavigationStart}
             />
           ))}
         </div>
@@ -1734,24 +1772,40 @@ function SidebarNavItem({
   active,
   href,
   icon,
-  label
+  label,
+  onNavigate
 }: {
   active: boolean
   href: string
   icon: ReactNode
   label: string
+  onNavigate: (href: string) => void
 }) {
   return (
     <Link
       href={href}
-      className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
+      onClick={() => onNavigate(href)}
+      className={`group flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left text-sm font-bold transition ${
         active
-          ? 'bg-indigo-600 text-white shadow-[0_12px_30px_rgba(67,56,202,0.24)]'
-          : 'text-slate-600 hover:bg-slate-100'
+          ? 'border-indigo-500/30 bg-indigo-600 text-white shadow-[0_12px_30px_rgba(67,56,202,0.24)]'
+          : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900'
       }`}
     >
-      {icon}
-      {label}
+      <span
+        className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl transition ${
+          active
+            ? 'bg-white/15 text-white'
+            : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-50 group-hover:text-indigo-600'
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="flex-1">{label}</span>
+      <span
+        className={`h-2.5 w-2.5 shrink-0 rounded-full transition ${
+          active ? 'bg-white' : 'bg-slate-200 group-hover:bg-indigo-200'
+        }`}
+      />
     </Link>
   )
 }
@@ -1760,16 +1814,19 @@ function MobileNavItem({
   active,
   href,
   icon,
-  label
+  label,
+  onNavigate
 }: {
   active: boolean
   href: string
   icon: ReactNode
   label: string
+  onNavigate: (href: string) => void
 }) {
   return (
     <Link
       href={href}
+      onClick={() => onNavigate(href)}
       className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2 text-[0.7rem] font-semibold ${
         active ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'
       }`}
@@ -1792,6 +1849,27 @@ function Field({
       <span className="mb-2 block text-sm font-semibold text-slate-600">{label}</span>
       {children}
     </label>
+  )
+}
+
+function DashboardLoadingOverlay() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-[32px] border border-white/60 bg-white/90 p-8 text-center shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100">
+          <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-indigo-200 border-t-indigo-600" />
+        </div>
+        <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-indigo-600">
+          PayReport
+        </p>
+        <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.05em] text-slate-900">
+          Loading workspace
+        </h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Menu stays mounted while the next page loads.
+        </p>
+      </div>
+    </div>
   )
 }
 

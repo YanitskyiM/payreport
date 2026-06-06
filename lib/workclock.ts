@@ -156,6 +156,22 @@ export function getPageTitle(view: View): string {
   }
 }
 
+export function getViewFromPathname(pathname: string): View {
+  if (pathname === '/dashboard/entries') {
+    return 'entries'
+  }
+
+  if (pathname === '/dashboard/reports') {
+    return 'reports'
+  }
+
+  if (pathname === '/dashboard/settings') {
+    return 'settings'
+  }
+
+  return 'dashboard'
+}
+
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

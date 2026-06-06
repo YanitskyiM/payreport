@@ -1,9 +1,13 @@
+import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { WorkClockApp } from '@/components/workclock-app'
 import { createClient } from '@/lib/supabase/server'
-import type { View } from '@/lib/workclock'
 
-export async function renderDashboardPage(currentView: View) {
+export default async function DashboardLayout({
+  children
+}: Readonly<{
+  children: ReactNode
+}>) {
   const supabase = await createClient()
   const { data } = await supabase.auth.getClaims()
   const claims = data?.claims
@@ -13,10 +17,12 @@ export async function renderDashboardPage(currentView: View) {
   }
 
   return (
-    <WorkClockApp
-      currentView={currentView}
-      userEmail={typeof claims.email === 'string' ? claims.email : ''}
-      userId={claims.sub}
-    />
+    <>
+      <WorkClockApp
+        userEmail={typeof claims.email === 'string' ? claims.email : ''}
+        userId={claims.sub}
+      />
+      <div className="hidden">{children}</div>
+    </>
   )
 }
