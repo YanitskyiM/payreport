@@ -37,14 +37,6 @@ export const DEFAULT_SETTINGS: Settings = {
   activeShiftStart: null
 }
 
-export const INITIAL_ENTRIES: Entry[] = [
-  createSeedEntry(5, 9, 0, 17, 30, 'timer', 'Client support'),
-  createSeedEntry(4, 8, 45, 16, 45, 'timer', 'Payroll review'),
-  createSeedEntry(3, 9, 30, 18, 0, 'manual', 'Manual adjustment'),
-  createSeedEntry(2, 10, 0, 15, 30, 'timer', 'Reporting block'),
-  createSeedEntry(1, 8, 30, 16, 15, 'timer', 'Weekly wrap-up')
-]
-
 export const HOUR_MS = 1000 * 60 * 60
 
 export function buildWeeklyChartData(
@@ -96,34 +88,6 @@ export function buildDailyDurations(entries: Entry[]): Record<string, number> {
 
 export function getEntryDurationMs(entry: Entry): number {
   return Math.max(0, new Date(entry.end).getTime() - new Date(entry.start).getTime())
-}
-
-export function createSeedEntry(
-  daysAgo: number,
-  startHour: number,
-  startMinute: number,
-  endHour: number,
-  endMinute: number,
-  source: Entry['source'],
-  note: string
-): Entry {
-  const baseDate = new Date()
-  baseDate.setHours(0, 0, 0, 0)
-  baseDate.setDate(baseDate.getDate() - daysAgo)
-
-  const start = new Date(baseDate)
-  start.setHours(startHour, startMinute, 0, 0)
-
-  const end = new Date(baseDate)
-  end.setHours(endHour, endMinute, 0, 0)
-
-  return {
-    id: createId(),
-    start: start.toISOString(),
-    end: end.toISOString(),
-    source,
-    note
-  }
 }
 
 export function createDefaultManualForm(date: Date): ManualFormState {

@@ -23,7 +23,6 @@ import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   HOUR_MS,
-  INITIAL_ENTRIES,
   DEFAULT_SETTINGS,
   buildDailyDurations,
   buildWeeklyChartData,
@@ -1151,6 +1150,7 @@ function ReportsView({
 }) {
   const [startDate, setStartDate] = useState(() => defaultReportStartDate())
   const [endDate, setEndDate] = useState(() => formatInputDate(new Date()))
+  const [activePresetLabel, setActivePresetLabel] = useState<string | null>(null)
   const [reportNotice, setReportNotice] = useState<string | null>(null)
 
   const filteredEntries = useMemo(() => {
@@ -1233,7 +1233,7 @@ function ReportsView({
               <input
                 type="date"
                 value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
+                onChange={(event) => { setStartDate(event.target.value); setActivePresetLabel(null) }}
                 className={inputClassName}
               />
             </Field>
@@ -1241,7 +1241,7 @@ function ReportsView({
               <input
                 type="date"
                 value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
+                onChange={(event) => { setEndDate(event.target.value); setActivePresetLabel(null) }}
                 className={inputClassName}
               />
             </Field>
@@ -1249,7 +1249,7 @@ function ReportsView({
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {presetRanges.map((preset) => {
-            const isActive = startDate === preset.startDate && endDate === preset.endDate
+            const isActive = activePresetLabel === preset.label
 
             return (
               <button
@@ -1258,6 +1258,7 @@ function ReportsView({
                 onClick={() => {
                   setStartDate(preset.startDate)
                   setEndDate(preset.endDate)
+                  setActivePresetLabel(preset.label)
                   setReportNotice(null)
                 }}
                 className={`inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
@@ -1653,10 +1654,11 @@ function defaultReportStartDate() {
 function buildReportPresetRanges() {
   const now = new Date()
 
+  const yesterday = addDays(now, -1)
+
   return [
-    createReportPreset('Last 7 days', addDays(now, -6), now),
     createReportPreset('This week', getStartOfWeek(now), now),
-    createReportPreset('Last week', addDays(getStartOfWeek(now), -7), addDays(getStartOfWeek(now), -1)),
+    createReportPreset('Last 2 weeks', addDays(yesterday, -13), yesterday),
     createReportPreset('This month', getStartOfMonth(now), now),
     createReportPreset('Last month', getStartOfPreviousMonth(now), getEndOfPreviousMonth(now))
   ]
@@ -1896,10 +1898,6 @@ function pdfText(
   const fontName = options?.font === 'bold' ? 'F2' : 'F1'
   const colorCommand = options?.color ? `${options.color} ` : ''
   return `q ${colorCommand}BT /${fontName} ${fontSize} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdfText(value)}) Tj ET Q\n`
-}
-
-function pdfLine(startX: number, startY: number, endX: number, endY: number) {
-  return pdfStrokeLine(startX, startY, endX, endY, '0.8 G')
 }
 
 function pdfRect(x: number, y: number, width: number, height: number, fillColorCommand: string) {
