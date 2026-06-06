@@ -1,0 +1,17 @@
+{
+  "name": "WorkClock",
+  "short_name": "WorkClock",
+  "description": "WorkClock payroll dashboard.",
+  "theme_color": "#4338ca",
+  "background_color": "#f8fafc",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
