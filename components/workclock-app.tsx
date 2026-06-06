@@ -20,6 +20,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
+import { useStandaloneMode } from '@/hooks/use-standalone-mode'
 import { createClient } from '@/lib/supabase/client'
 import {
   HOUR_MS,
@@ -126,6 +127,7 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
     createDefaultManualForm(new Date())
   )
   const currentView = getViewFromPathname(pathname)
+  const isOverlayOpen = isManualEntryOpen || deleteEntryTarget !== null
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -162,7 +164,34 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
     }
 
     setIsRouteLoading(false)
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [pathname])
+
+  useEffect(() => {
+    if (!isOverlayOpen) {
+      return
+    }
+
+    const scrollY = window.scrollY
+    const { body } = document
+    const originalOverflow = body.style.overflow
+    const originalPosition = body.style.position
+    const originalTop = body.style.top
+    const originalWidth = body.style.width
+
+    body.style.overflow = 'hidden'
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.width = '100%'
+
+    return () => {
+      body.style.overflow = originalOverflow
+      body.style.position = originalPosition
+      body.style.top = originalTop
+      body.style.width = originalWidth
+      window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' })
+    }
+  }, [isOverlayOpen])
 
   const sortedEntries = useMemo(
     () =>
@@ -1094,6 +1123,7 @@ function ReportsView({
   hourlyRate: number
   workerName: string
 }) {
+  const isStandaloneMode = useStandaloneMode()
   const [startDate, setStartDate] = useState(() => defaultReportStartDate())
   const [endDate, setEndDate] = useState(() => formatInputDate(new Date()))
   const [reportNotice, setReportNotice] = useState<string | null>(null)
@@ -1143,6 +1173,19 @@ function ReportsView({
         fullDate: formatEntryDate(new Date(`${dateKey}T12:00:00`))
       }))
   }, [filteredEntries])
+
+  function downloadPrintableReport(reportMarkup: string, filename: string, notice: string) {
+    const reportBlob = new Blob([reportMarkup], { type: 'text/html' })
+    const reportUrl = URL.createObjectURL(reportBlob)
+    const downloadLink = document.createElement('a')
+    downloadLink.href = reportUrl
+    downloadLink.download = filename
+    document.body.append(downloadLink)
+    downloadLink.click()
+    downloadLink.remove()
+    window.setTimeout(() => URL.revokeObjectURL(reportUrl), 1000)
+    setReportNotice(notice)
+  }
 
   function handleGeneratePdf() {
     if (!rangeIsValid) {
@@ -1221,6 +1264,17 @@ function ReportsView({
 
     setReportNotice(null)
 
+    const fileName = `pay-period-report-${startDate}-to-${endDate}.html`
+
+    if (isStandaloneMode) {
+      downloadPrintableReport(
+        reportMarkup,
+        fileName,
+        'Downloaded the printable report to avoid trapping the app in a separate PWA window.'
+      )
+      return
+    }
+
     const reportWindow = window.open('', '_blank')
     if (reportWindow) {
       reportWindow.document.open()
@@ -1229,16 +1283,7 @@ function ReportsView({
       return
     }
 
-    const reportBlob = new Blob([reportMarkup], { type: 'text/html' })
-    const reportUrl = URL.createObjectURL(reportBlob)
-    const downloadLink = document.createElement('a')
-    downloadLink.href = reportUrl
-    downloadLink.download = `pay-period-report-${startDate}-to-${endDate}.html`
-    document.body.append(downloadLink)
-    downloadLink.click()
-    downloadLink.remove()
-    window.setTimeout(() => URL.revokeObjectURL(reportUrl), 1000)
-    setReportNotice('Popup blocked. Downloaded the printable report instead.')
+    downloadPrintableReport(reportMarkup, fileName, 'Popup blocked. Downloaded the printable report instead.')
   }
 
   return (
@@ -1285,7 +1330,7 @@ function ReportsView({
             disabled={!rangeIsValid}
             className="inline-flex h-12 items-center justify-center rounded-2xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            Generate Accountant PDF
+            {isStandaloneMode ? 'Download Accountant Report' : 'Generate Accountant PDF'}
           </button>
         </div>
       </section>
@@ -1734,6 +1779,7 @@ function SidebarNavItem({
   return (
     <Link
       href={href}
+      scroll
       onClick={() => onNavigate(href)}
       className={`group flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left text-sm font-bold transition ${
         active
@@ -1776,6 +1822,7 @@ function MobileNavItem({
   return (
     <Link
       href={href}
+      scroll
       onClick={() => onNavigate(href)}
       className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2 text-[0.7rem] font-semibold ${
         active ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'
