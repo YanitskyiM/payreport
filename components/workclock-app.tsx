@@ -1267,6 +1267,10 @@ function ReportsView({
     }
     return (workdays / 5) * weeklyGoalHours
   }, [startDate, endDate, weeklyGoalHours])
+  const expectedRegularHours = Math.min(currentPeriodHours, periodGoalHours)
+  const expectedOvertimeHours = Math.max(0, currentPeriodHours - periodGoalHours)
+  const expectedRegularPay = expectedRegularHours * hourlyRate
+  const expectedOvertimePay = expectedOvertimeHours * hourlyRate * overworksRate
   const periodBars = useMemo(() => {
     const dailyDurations = buildDailyDurations(filteredEntries)
 
@@ -1298,7 +1302,6 @@ function ReportsView({
       workerName
     })
 
-    const opened = openPdfReport(reportBytes)
   }
 
   return (
@@ -1389,6 +1392,16 @@ function ReportsView({
           overworksRate={overworksRate}
           hint={periodLabel}
         />
+        <PayBreakdownCard
+          title="Expected Salary"
+          regularHours={expectedRegularHours}
+          overtimeHours={expectedOvertimeHours}
+          regularPay={expectedRegularPay}
+          overtimePay={expectedOvertimePay}
+          hourlyRate={hourlyRate}
+          overworksRate={overworksRate}
+          hint={periodLabel}
+        />
         <SummaryCard
           title="Pay Period Hours"
           value={formatDuration(currentPeriodHours)}
@@ -1449,10 +1462,10 @@ function ReportsView({
 
           {(() => {
             const total = currentPeriodHours
-            const overGoal = total >= periodGoalHours
-            const regularPct = periodGoalHours > 0 ? Math.min((regularTrackedHours / periodGoalHours) * 100, 100) : 0
-            const overtimePct = periodGoalHours > 0 ? Math.min((overtimeHours / periodGoalHours) * 100, 100 - regularPct) : 0
             const remainingHours = Math.max(0, periodGoalHours - total)
+            const totalPct = periodGoalHours > 0 ? Math.min((total / periodGoalHours) * 100, 100) : 0
+            const regularPct = total > 0 ? (regularTrackedHours / total) * totalPct : 0
+            const overtimePct = totalPct - regularPct
 
             return (
               <>
@@ -1482,11 +1495,14 @@ function ReportsView({
                     <span className="text-slate-500">overtime</span>
                   </span>
                   <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-400" />
+                    <span className="font-semibold text-slate-700">{formatShortHours(total)}</span>
+                    <span className="text-slate-500">total</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
                     <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-300" />
-                    <span className="font-semibold text-slate-700">
-                      {overGoal ? 'Goal exceeded' : formatShortHours(remainingHours)}
-                    </span>
-                    {!overGoal && <span className="text-slate-500">remaining</span>}
+                    <span className="font-semibold text-slate-700">{formatShortHours(remainingHours)}</span>
+                    <span className="text-slate-500">remaining</span>
                   </span>
                 </div>
               </>
@@ -1894,7 +1910,6 @@ function buildReportPresetRanges() {
   const yesterday = addDays(now, -1)
 
   return [
-    createReportPreset('This week to date', getStartOfWeek(now), now),
     createReportPreset('This week', getStartOfWeek(now), getEndOfWeek(now)),
     createReportPreset('Last 2 weeks', addDays(yesterday, -13), yesterday),
     createReportPreset('Last 4 weeks', addDays(yesterday, -27), yesterday),
@@ -1993,12 +2008,9 @@ function createPayPeriodPdf({
     let content = ''
 
     content += pdfRect(marginLeft, cursorY - 56, contentWidth, 78, '0.12 0.16 0.28 rg')
-    content += pdfText('Pay Period Report', marginLeft + 20, cursorY - 2, 22, {
+    content += pdfText('Pay Period Report', marginLeft + 20, cursorY - 22, 22, {
       color: '1 1 1 rg',
       font: 'bold'
-    })
-    content += pdfText('Tracked work summary', marginLeft + 20, cursorY - 22, 10, {
-      color: '0.82 0.87 0.96 rg'
     })
     cursorY -= 108
 
@@ -2196,6 +2208,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
 }
 
 function PayBreakdownCard({
+  title = 'Pay Breakdown',
   regularHours,
   overtimeHours,
   regularPay,
@@ -2204,6 +2217,7 @@ function PayBreakdownCard({
   overworksRate,
   hint
 }: {
+  title?: string
   regularHours: number
   overtimeHours: number
   regularPay: number
@@ -2212,6 +2226,7 @@ function PayBreakdownCard({
   overworksRate: number
   hint?: string
 }) {
+  const [isOpen, setIsOpen] = useState(false)
   const totalPay = regularPay + overtimePay
 
   return (
@@ -2222,36 +2237,47 @@ function PayBreakdownCard({
         </div>
         {hint ? <p className="text-right text-xs font-bold text-slate-500">{hint}</p> : null}
       </div>
-      <h2 className="mt-5 text-sm font-semibold text-slate-500">Pay Breakdown</h2>
+      <button
+        onClick={() => setIsOpen(o => !o)}
+        className="mt-5 flex w-full items-center justify-between gap-2 text-left"
+        aria-expanded={isOpen}
+      >
+        <h2 className="text-sm font-semibold text-slate-500">{title}</h2>
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
       <p className="mt-2 text-[2rem] font-extrabold leading-none tracking-[-0.05em] text-slate-900">
         {formatCurrency(totalPay)}
       </p>
-      <div className="mt-5 space-y-3 text-sm">
-        <div className="flex items-start justify-between gap-4">
-          <span className="flex items-start gap-2">
-            <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
-            <span>
-              <span className="font-medium text-slate-700">Regular</span>
-              <span className="mt-0.5 block text-xs text-slate-400">{formatShortHours(regularHours)} × {formatCurrency(hourlyRate)}</span>
+      {isOpen && (
+        <div className="mt-5 space-y-3 text-sm">
+          <div className="flex items-start justify-between gap-4">
+            <span className="flex items-start gap-2">
+              <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
+              <span>
+                <span className="font-medium text-slate-700">Regular</span>
+                <span className="mt-0.5 block text-xs text-slate-400">{formatShortHours(regularHours)} × {formatCurrency(hourlyRate)}</span>
+              </span>
             </span>
-          </span>
-          <span className="font-semibold text-slate-800">{formatCurrency(regularPay)}</span>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <span className="flex items-start gap-2">
-            <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
-            <span>
-              <span className="font-medium text-slate-700">Overtime</span>
-              <span className="mt-0.5 block text-xs text-slate-400">{formatShortHours(overtimeHours)} × {formatCurrency(hourlyRate * overworksRate)}</span>
+            <span className="font-semibold text-slate-800">{formatCurrency(regularPay)}</span>
+          </div>
+          <div className="flex items-start justify-between gap-4">
+            <span className="flex items-start gap-2">
+              <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+              <span>
+                <span className="font-medium text-slate-700">Overtime</span>
+                <span className="mt-0.5 block text-xs text-slate-400">{formatShortHours(overtimeHours)} × {formatCurrency(hourlyRate * overworksRate)}</span>
+              </span>
             </span>
-          </span>
-          <span className="font-semibold text-slate-800">{formatCurrency(overtimePay)}</span>
+            <span className="font-semibold text-slate-800">{formatCurrency(overtimePay)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <span className="font-semibold text-slate-700">Total</span>
+            <span className="text-base font-bold text-slate-900">{formatCurrency(totalPay)}</span>
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-          <span className="font-semibold text-slate-700">Total</span>
-          <span className="text-base font-bold text-slate-900">{formatCurrency(totalPay)}</span>
-        </div>
-      </div>
+      )}
     </section>
   )
 }

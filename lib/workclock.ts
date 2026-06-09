@@ -96,7 +96,7 @@ export function createDefaultManualForm(date: Date): ManualFormState {
   return {
     date: formatInputDate(date),
     startTime: '09:00',
-    endTime: '17:00',
+    endTime: '18:00',
     note: ''
   }
 }
