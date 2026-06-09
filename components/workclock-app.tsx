@@ -18,7 +18,7 @@ import {
   HOUR_MS,
   getEntryDurationMs,
 } from '@/lib/workclock'
-import type { Entry, ManualFormState, PayReportAppProps, PendingShift, ProfileRow, EntryRow } from './workclock/types'
+import type { Entry, ManualFormState, PayReportAppProps, PendingShift, ProfileRow } from './workclock/types'
 import { NAV_ITEMS } from './workclock/constants'
 import { mapProfileToSettings, mapRowToEntry, toInputTime } from './workclock/utils'
 import { DashboardLoadingOverlay } from './workclock/ui/DashboardLoadingOverlay'
@@ -386,7 +386,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     <main className="min-h-screen bg-slate-100 text-slate-900">
       {(isBusy || isRouteLoading) && <DashboardLoadingOverlay />}
       <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col lg:flex-row lg:gap-6 lg:px-6 lg:py-6">
-        <aside className="hidden w-[280px] shrink-0 lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)] lg:h-[calc(100dvh-3rem)]">
+        <aside className="hidden w-[280px] shrink-0 lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)]">
           <div className="flex h-full w-full flex-col rounded-[32px] border border-slate-200 bg-white px-6 py-8 shadow-sm">
             <Brand />
 

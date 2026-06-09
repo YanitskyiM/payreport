@@ -18,7 +18,6 @@ import {
   formatElapsedTimer,
   formatEntryDate,
   formatShortHours,
-  formatTime,
   formatTimeRange,
   getEntryDurationMs,
   getStartOfWeek,

@@ -267,19 +267,6 @@ export function getBiWeeklyPeriodStart(date: Date): Date {
   return result
 }
 
-export function isDateInCurrentBiWeeklyPeriod(date: Date, now: Date): boolean {
-  const start = getBiWeeklyPeriodStart(now)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 14)
-  return date >= start && date < end
-}
-
-export function isDateInPreviousBiWeeklyPeriod(date: Date, now: Date): boolean {
-  const currentStart = getBiWeeklyPeriodStart(now)
-  const prevStart = new Date(currentStart)
-  prevStart.setDate(prevStart.getDate() - 14)
-  return date >= prevStart && date < currentStart
-}
 
 export function isSameDay(left: Date, right: Date): boolean {
   return (
