@@ -33,11 +33,6 @@ export function SidebarNavItem({ active, href, icon, label, onNavigate }: Sideba
         {icon}
       </span>
       <span className="flex-1">{label}</span>
-      <span
-        className={`h-2.5 w-2.5 shrink-0 rounded-full transition ${
-          active ? 'bg-white' : 'bg-slate-200 group-hover:bg-indigo-200'
-        }`}
-      />
     </Link>
   )
 }
