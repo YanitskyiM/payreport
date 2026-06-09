@@ -50,6 +50,10 @@ function toInputTime(date: Date) {
   return `${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`
 }
 
+function formatDayOfWeek(date: Date) {
+  return date.toLocaleDateString('en-US', { weekday: 'short' })
+}
+
 export function EntriesShell({
   entries: rawEntries,
   page,
@@ -217,7 +221,10 @@ export function EntriesShell({
               entries.map((entry) => (
                 <tr key={entry.id}>
                   <td className="px-4 py-4 text-sm font-semibold text-slate-900">
-                    {formatEntryDate(new Date(entry.start))}
+                    {formatEntryDate(new Date(entry.start))}{' '}
+                    <span className="font-normal text-slate-400">
+                      ({formatDayOfWeek(new Date(entry.start))})
+                    </span>
                   </td>
                   <td className="px-4 py-4 text-sm text-slate-600">{formatTimeRange(entry)}</td>
                   <td className="px-4 py-4 text-sm font-semibold text-slate-900">
@@ -268,7 +275,10 @@ export function EntriesShell({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-bold text-slate-900">
-                  {formatEntryDate(new Date(entry.start))}
+                  {formatEntryDate(new Date(entry.start))}{' '}
+                  <span className="font-normal text-slate-400">
+                    ({formatDayOfWeek(new Date(entry.start))})
+                  </span>
                 </p>
                 <p className="mt-1 text-xs text-slate-500">{formatTimeRange(entry)}</p>
               </div>

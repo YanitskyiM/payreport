@@ -10,7 +10,6 @@ import {
   formatInputDate,
   formatShortHours,
   getEntryDurationMs,
-  getStartOfWeek,
 } from '@/lib/workclock'
 import type { Entry } from '../types'
 import { SummaryCard } from '../ui/SummaryCard'
@@ -21,7 +20,6 @@ import {
   buildReportPresetRanges,
   filterEntriesByRange,
   formatReportRangeLabel,
-  getEndOfWeek,
 } from '../report-utils'
 import { createPayPeriodPdf } from '../pdf'
 
@@ -34,10 +32,19 @@ type ReportsViewProps = {
 }
 
 export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRate, workerName }: ReportsViewProps) {
-  const [startDate, setStartDate] = useState(() => formatInputDate(getStartOfWeek(new Date())))
-  const [endDate, setEndDate] = useState(() => formatInputDate(getEndOfWeek(new Date())))
-  const [activePresetLabel, setActivePresetLabel] = useState<string | null>('This week')
+  const [startDate, setStartDate] = useState(() => {
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+    const twoWeeksAgo = new Date(yesterday); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 13)
+    return formatInputDate(twoWeeksAgo)
+  })
+  const [endDate, setEndDate] = useState(() => {
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+    return formatInputDate(yesterday)
+  })
+  const [activePresetLabel, setActivePresetLabel] = useState<string | null>('Last 2 weeks')
   const [filtersOpen, setFiltersOpen] = useState(false)
+
+  const todayStr = formatInputDate(new Date())
 
   const filteredEntries = useMemo(
     () => filterEntriesByRange(entries, startDate, endDate),
@@ -118,6 +125,7 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
         hours: dailyDurations[dateKey] ?? 0,
         fullDate: formatEntryDate(cursor),
         weekday: cursor.toLocaleDateString('en-US', { weekday: 'short' }),
+        weekdayLong: cursor.toLocaleDateString('en-US', { weekday: 'long' }),
       })
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -130,7 +138,10 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
 
   function handleGeneratePdf() {
     if (!rangeIsValid) return
-    createPayPeriodPdf({ endDate, entries: filteredEntries, startDate, workerName })
+    const bytes = createPayPeriodPdf({ endDate, entries: filteredEntries, startDate, workerName })
+    const url = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }))
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
   }
 
   return (
@@ -160,7 +171,13 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(event) => { setStartDate(event.target.value); setActivePresetLabel(null) }}
+                  max={endDate || todayStr}
+                  onChange={(event) => {
+                    const val = event.target.value
+                    setStartDate(val)
+                    setActivePresetLabel(null)
+                    if (endDate && val > endDate) setEndDate(val)
+                  }}
                   className={inputClassName}
                 />
               </Field>
@@ -168,7 +185,14 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(event) => { setEndDate(event.target.value); setActivePresetLabel(null) }}
+                  min={startDate}
+                  max={todayStr}
+                  onChange={(event) => {
+                    const val = event.target.value > todayStr ? todayStr : event.target.value
+                    setEndDate(val)
+                    setActivePresetLabel(null)
+                    if (startDate && val < startDate) setStartDate(val)
+                  }}
                   className={inputClassName}
                 />
               </Field>
@@ -412,8 +436,11 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
             <div key={bar.dateKey} className="rounded-2xl bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-bold text-slate-900">{bar.fullDate}</p>
-                  <p className="mt-1 text-xs text-slate-500">{bar.dateKey}</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-500">
+                    {bar.weekdayLong}
+                  </p>
+                  <p className="mt-0.5 text-sm font-bold text-slate-900">{bar.fullDate}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">{bar.dateKey}</p>
                 </div>
                 <p className="text-lg font-extrabold tracking-[-0.04em] text-slate-900">
                   {formatShortHours(bar.hours)}

@@ -27,6 +27,8 @@ export type WeeklyBar = {
   dayName: string
   fullDate: string
   heightPercent: number
+  regularHeightPercent: number
+  overtimeHeightPercent: number
   hours: number
   label: string
 }
@@ -67,6 +69,8 @@ export function buildWeeklyChartData(
         day: 'numeric'
       }),
       heightPercent: 0,
+      regularHeightPercent: 0,
+      overtimeHeightPercent: 0,
       hours,
       label: currentDate.toLocaleDateString('en-US', { weekday: 'short' })
     })
@@ -74,10 +78,16 @@ export function buildWeeklyChartData(
 
   const peak = Math.max(...dailyHours.map((day) => day.hours), 1)
 
-  return dailyHours.map((day) => ({
-    ...day,
-    heightPercent: (day.hours / peak) * 100
-  }))
+  return dailyHours.map((day) => {
+    const regularH = (Math.min(day.hours, 8) / peak) * 100
+    const overtimeH = (Math.max(day.hours - 8, 0) / peak) * 100
+    return {
+      ...day,
+      heightPercent: regularH + overtimeH,
+      regularHeightPercent: regularH,
+      overtimeHeightPercent: overtimeH,
+    }
+  })
 }
 
 export function buildDailyDurations(entries: Entry[]): Record<string, number> {

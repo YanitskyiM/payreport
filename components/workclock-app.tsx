@@ -134,7 +134,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
 
   const weeklyGoalProgress =
     settings.weeklyGoalHours <= 0 ? 0 : weekHours / settings.weeklyGoalHours
-  const recentEntries = sortedEntries.slice(0, 6)
+  const recentEntries = sortedEntries.slice(0, 4)
   const pageTitle = getPageTitle(currentView)
 
   function handleNavigationStart(href: string) {

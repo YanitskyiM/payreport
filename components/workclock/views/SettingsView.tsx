@@ -1,11 +1,13 @@
 'use client'
 
+import { useRef, useState } from 'react'
 import type { Dispatch, FormEvent, SetStateAction } from 'react'
 import { formatCurrency } from '@/lib/workclock'
 import type { Settings } from '../types'
 import { Field } from '../ui/Field'
 import { SettingsMetric } from '../ui/SettingsMetric'
 import { inputClassName } from '../constants'
+import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
 
 type SettingsViewProps = {
   notice: string | null
@@ -16,6 +18,13 @@ type SettingsViewProps = {
 }
 
 export function SettingsView({ notice, onSave, settings, setSettings, userEmail }: SettingsViewProps) {
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
+  const logoutFormRef = useRef<HTMLFormElement>(null)
+
+  function handleLogoutConfirm() {
+    logoutFormRef.current?.submit()
+  }
+
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <form
@@ -107,16 +116,24 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
 
         <div className="mt-6 rounded-3xl bg-slate-50 p-4">
           <p className="text-sm font-semibold text-slate-500">Session</p>
-          <form action="/auth/signout" method="post" className="mt-3">
+          <form ref={logoutFormRef} action="/auth/signout" method="post" className="mt-3">
             <button
-              type="submit"
-              className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-bold text-white transition hover:bg-slate-800"
+              type="button"
+              onClick={() => setIsLogoutConfirmOpen(true)}
+              className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-rose-600 px-5 text-sm font-bold text-white transition hover:bg-rose-700"
             >
               Sign Out
             </button>
           </form>
         </div>
       </section>
+
+      {isLogoutConfirmOpen && (
+        <LogoutConfirmModal
+          onCancel={() => setIsLogoutConfirmOpen(false)}
+          onConfirm={handleLogoutConfirm}
+        />
+      )}
     </section>
   )
 }
