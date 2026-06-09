@@ -27,6 +27,7 @@ import {
   DEFAULT_SETTINGS,
   buildDailyDurations,
   buildWeeklyChartData,
+  calculatePayFromHours,
   createDefaultManualForm,
   createId,
   formatCurrency,
@@ -38,20 +39,19 @@ import {
   formatShortHours,
   formatTime,
   formatTimeRange,
-  formatTrend,
   getViewFromPathname,
   getEntryDurationMs,
   getPageTitle,
   getStartOfWeek,
   goalHint,
+  isDateInCurrentBiWeeklyPeriod,
+  isDateInPreviousBiWeeklyPeriod,
   isDateInCurrentWeek,
-  isDateInPreviousWeek,
   isSameDay,
   type Entry,
   type ManualFormState,
   type Settings,
   type View,
-  type WeeklyBar
 } from '@/lib/workclock'
 
 type NavItemConfig = {
@@ -66,6 +66,7 @@ type ProfileRow = {
   worker_name: string
   hourly_rate: number
   weekly_goal_hours: number
+  overworks_rate: number
   active_shift_start: string | null
 }
 
@@ -77,7 +78,7 @@ type EntryRow = {
   note: string | null
 }
 
-type WorkClockAppProps = {
+type PayReportAppProps = {
   userEmail: string
   userId: string
 }
@@ -106,7 +107,7 @@ const NAV_ITEMS: NavItemConfig[] = [
 const inputClassName =
   'h-12 min-w-0 w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100'
 
-export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
+export function PayReportApp({ userEmail, userId }: PayReportAppProps) {
   const supabase = useMemo(() => createClient(), [])
   const pathname = usePathname()
   const routeLoadingTimeoutRef = useRef<number | null>(null)
@@ -206,8 +207,14 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
     [now, sortedEntries]
   )
 
-  const lastWeekEntries = useMemo(
-    () => sortedEntries.filter((entry) => isDateInPreviousWeek(new Date(entry.start), now)),
+
+  const currentBiWeeklyEntries = useMemo(
+    () => sortedEntries.filter((entry) => isDateInCurrentBiWeeklyPeriod(new Date(entry.start), now)),
+    [now, sortedEntries]
+  )
+
+  const lastBiWeeklyEntries = useMemo(
+    () => sortedEntries.filter((entry) => isDateInPreviousBiWeeklyPeriod(new Date(entry.start), now)),
     [now, sortedEntries]
   )
 
@@ -230,14 +237,26 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
     return (totalMs + activeShiftDurationMs) / HOUR_MS
   }, [activeShiftDurationMs, currentWeekEntries])
 
-  const lastWeekHours = useMemo(
-    () => lastWeekEntries.reduce((sum, entry) => sum + getEntryDurationMs(entry), 0) / HOUR_MS,
-    [lastWeekEntries]
+
+  const biWeeklyHours = useMemo(() => {
+    const totalMs = currentBiWeeklyEntries.reduce((sum, entry) => sum + getEntryDurationMs(entry), 0)
+    return (totalMs + activeShiftDurationMs) / HOUR_MS
+  }, [activeShiftDurationMs, currentBiWeeklyEntries])
+
+  const lastBiWeeklyHours = useMemo(
+    () => lastBiWeeklyEntries.reduce((sum, entry) => sum + getEntryDurationMs(entry), 0) / HOUR_MS,
+    [lastBiWeeklyEntries]
   )
 
-  const projectedWeeklyPay = weekHours * settings.hourlyRate
+  const biWeeklyGoalHours = settings.weeklyGoalHours * 2
+  const projectedBiWeeklyPay = calculatePayFromHours(
+    biWeeklyHours,
+    biWeeklyGoalHours,
+    settings.hourlyRate,
+    settings.overworksRate
+  )
   const earningsTrend =
-    lastWeekHours <= 0 ? null : ((weekHours - lastWeekHours) / lastWeekHours) * 100
+    lastBiWeeklyHours <= 0 ? null : ((biWeeklyHours - lastBiWeeklyHours) / lastBiWeeklyHours) * 100
   const weeklyGoalProgress =
     settings.weeklyGoalHours <= 0 ? 0 : weekHours / settings.weeklyGoalHours
   const recentEntries = sortedEntries.slice(0, 6)
@@ -286,7 +305,7 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
   async function fetchOrCreateProfile(): Promise<ProfileRow> {
     const { data, error } = await supabase
       .from('profiles')
-      .select('user_id, worker_name, hourly_rate, weekly_goal_hours, active_shift_start')
+      .select('user_id, worker_name, hourly_rate, weekly_goal_hours, overworks_rate, active_shift_start')
       .eq('user_id', userId)
       .maybeSingle()
 
@@ -309,9 +328,10 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
         worker_name: workerName,
         hourly_rate: DEFAULT_SETTINGS.hourlyRate,
         weekly_goal_hours: DEFAULT_SETTINGS.weeklyGoalHours,
+        overworks_rate: DEFAULT_SETTINGS.overworksRate,
         active_shift_start: null
       })
-      .select('user_id, worker_name, hourly_rate, weekly_goal_hours, active_shift_start')
+      .select('user_id, worker_name, hourly_rate, weekly_goal_hours, overworks_rate, active_shift_start')
       .single()
 
     if (insertError) {
@@ -522,8 +542,8 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
   async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (settings.hourlyRate < 0 || settings.weeklyGoalHours <= 0) {
-      setSettingsNotice('Hourly rate must be positive and weekly goal above zero.')
+    if (settings.hourlyRate < 0 || settings.weeklyGoalHours <= 0 || settings.overworksRate < 1) {
+      setSettingsNotice('Hourly rate must be positive, weekly goal above zero, and overworks rate at least 1.')
       return
     }
 
@@ -532,7 +552,8 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
       .update({
         worker_name: settings.workerName.trim() || DEFAULT_SETTINGS.workerName,
         hourly_rate: settings.hourlyRate,
-        weekly_goal_hours: settings.weeklyGoalHours
+        weekly_goal_hours: settings.weeklyGoalHours,
+        overworks_rate: settings.overworksRate
       })
       .eq('user_id', userId)
 
@@ -636,7 +657,7 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
                 onSaveShift={() => void handleSavePendingShift()}
                 onStartShift={() => void handleStartShift()}
                 onStopShift={() => void handleStopShift()}
-                projectedWeeklyPay={projectedWeeklyPay}
+                projectedWeeklyPay={projectedBiWeeklyPay}
                 recentEntries={recentEntries}
                 settings={settings}
                 todayHours={todayHours}
@@ -660,6 +681,8 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
               <ReportsView
                 entries={sortedEntries}
                 hourlyRate={settings.hourlyRate}
+                weeklyGoalHours={settings.weeklyGoalHours}
+                overworksRate={settings.overworksRate}
                 workerName={settings.workerName}
               />
             ) : null}
@@ -724,6 +747,7 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
       workerName: profile.worker_name,
       hourlyRate: profile.hourly_rate,
       weeklyGoalHours: profile.weekly_goal_hours,
+      overworksRate: profile.overworks_rate ?? DEFAULT_SETTINGS.overworksRate,
       activeShiftStart: profile.active_shift_start
     }
   }
@@ -743,7 +767,6 @@ function DashboardView({
   activeShiftDurationMs,
   activeShiftStart,
   pendingShift,
-  earningsTrend,
   entries,
   now,
   onAddManualEntry,
@@ -751,10 +774,8 @@ function DashboardView({
   onSaveShift,
   onStartShift,
   onStopShift,
-  projectedWeeklyPay,
   recentEntries,
   settings,
-  todayHours,
   weekHours,
   weeklyGoalProgress,
   onDeleteEntry,
@@ -810,20 +831,6 @@ function DashboardView({
         <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-500">Total Today</p>
-                <p className="mt-3 text-5xl font-extrabold tracking-[-0.06em] text-indigo-600 sm:text-6xl">
-                  {formatDuration(todayHours)}
-                </p>
-                <p className="mt-3 text-sm text-slate-500">
-                  {activeShiftStart
-                    ? `Currently running since ${formatTime(new Date(activeShiftStart))}`
-                    : pendingShift
-                      ? `Paused at ${formatTime(new Date(pendingShift.end))}`
-                      : 'No active shift right now.'}
-                </p>
-              </div>
-
               <div className="rounded-[26px] bg-slate-50 p-4 sm:p-5 lg:min-w-[280px]">
                 <div className="flex items-center gap-4">
                   <div className="grid h-20 w-20 place-items-center rounded-full bg-indigo-100 text-indigo-600">
@@ -911,13 +918,6 @@ function DashboardView({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-          <SummaryCard
-            title="Estimated Earnings"
-            value={formatCurrency(projectedWeeklyPay)}
-            hint={formatTrend(earningsTrend)}
-            icon={<BanknotesIcon className="h-5 w-5" />}
-            tone="indigo"
-          />
           <SummaryCard
             title={`Weekly Goal (${settings.weeklyGoalHours}h)`}
             value={formatDuration(weekHours)}
@@ -1189,16 +1189,19 @@ function EntriesView({
 function ReportsView({
   entries,
   hourlyRate,
+  weeklyGoalHours,
+  overworksRate,
   workerName
 }: {
   entries: Entry[]
   hourlyRate: number
+  weeklyGoalHours: number
+  overworksRate: number
   workerName: string
 }) {
   const [startDate, setStartDate] = useState(() => defaultReportStartDate())
   const [endDate, setEndDate] = useState(() => formatInputDate(new Date()))
   const [activePresetLabel, setActivePresetLabel] = useState<string | null>(null)
-  const [reportNotice, setReportNotice] = useState<string | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filteredEntries = useMemo(() => {
@@ -1217,7 +1220,6 @@ function ReportsView({
     () => filteredEntries.reduce((sum, entry) => sum + getEntryDurationMs(entry), 0) / HOUR_MS,
     [filteredEntries]
   )
-  const projectedPay = currentPeriodHours * hourlyRate
   const longestShiftHours = useMemo(
     () =>
       filteredEntries.reduce((longest, entry) => {
@@ -1229,12 +1231,42 @@ function ReportsView({
   const averageDailyHours = useMemo(() => {
     const dailyDurations = buildDailyDurations(filteredEntries)
     const values = Object.values(dailyDurations)
-    if (values.length === 0) {
-      return 0
-    }
-
+    if (values.length === 0) return 0
     return values.reduce((sum, value) => sum + value, 0) / values.length
   }, [filteredEntries])
+  const overtimeHours = useMemo(() => {
+    const dailyDurations = buildDailyDurations(filteredEntries)
+    return Object.values(dailyDurations).reduce((sum, hours) => sum + Math.max(0, hours - 8), 0)
+  }, [filteredEntries])
+  const shortestShiftHours = useMemo(
+    () =>
+      filteredEntries.length === 0
+        ? 0
+        : filteredEntries.reduce((shortest, entry) => {
+            const durationHours = getEntryDurationMs(entry) / HOUR_MS
+            return Math.min(shortest, durationHours)
+          }, Infinity),
+    [filteredEntries]
+  )
+  const regularTrackedHours = useMemo(() => {
+    const dailyDurations = buildDailyDurations(filteredEntries)
+    return Object.values(dailyDurations).reduce((sum, hours) => sum + Math.min(hours, 8), 0)
+  }, [filteredEntries])
+  const regularPay = regularTrackedHours * hourlyRate
+  const overtimePay = overtimeHours * hourlyRate * overworksRate
+  const periodGoalHours = useMemo(() => {
+    if (!startDate || !endDate || endDate < startDate) return weeklyGoalHours
+    const start = new Date(`${startDate}T12:00:00`)
+    const end = new Date(`${endDate}T12:00:00`)
+    let workdays = 0
+    const cursor = new Date(start)
+    while (cursor <= end) {
+      const dow = cursor.getDay()
+      if (dow !== 0 && dow !== 6) workdays++
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    return (workdays / 5) * weeklyGoalHours
+  }, [startDate, endDate, weeklyGoalHours])
   const periodBars = useMemo(() => {
     const dailyDurations = buildDailyDurations(filteredEntries)
 
@@ -1251,6 +1283,7 @@ function ReportsView({
       })
   }, [filteredEntries])
   const reportRangeLabel = rangeIsValid ? formatReportRangeLabel(startDate, endDate) : 'Select a valid range'
+  const periodLabel = activePresetLabel ?? reportRangeLabel
   const presetRanges = useMemo(() => buildReportPresetRanges(), [])
 
   function handleGeneratePdf() {
@@ -1266,7 +1299,6 @@ function ReportsView({
     })
 
     const opened = openPdfReport(reportBytes)
-    setReportNotice(opened ? null : 'Popup blocked. Allow popups to open the PDF preview.')
   }
 
   return (
@@ -1282,7 +1314,7 @@ function ReportsView({
             <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
               Report range
             </h2>
-            <p className="mt-1 text-sm text-slate-500">{reportRangeLabel}</p>
+            <p className="mt-1 text-sm text-slate-500">{periodLabel}</p>
           </div>
           <ChevronDownIcon
             className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`}
@@ -1321,7 +1353,6 @@ function ReportsView({
                       setStartDate(preset.startDate)
                       setEndDate(preset.endDate)
                       setActivePresetLabel(preset.label)
-                      setReportNotice(null)
                     }}
                     className={`inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
                       isActive
@@ -1334,14 +1365,7 @@ function ReportsView({
                 )
               })}
             </div>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <p className="text-sm text-slate-500">
-                  {rangeIsValid
-                    ? `${filteredEntries.length} entries in selected pay period.`
-                    : 'Select a valid date range.'}
-                </p>
-              </div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
               <button
                 type="button"
                 onClick={handleGeneratePdf}
@@ -1356,35 +1380,120 @@ function ReportsView({
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <PayBreakdownCard
+          regularHours={regularTrackedHours}
+          overtimeHours={overtimeHours}
+          regularPay={regularPay}
+          overtimePay={overtimePay}
+          hourlyRate={hourlyRate}
+          overworksRate={overworksRate}
+          hint={periodLabel}
+        />
         <SummaryCard
-          title="Pay Period"
+          title="Pay Period Hours"
           value={formatDuration(currentPeriodHours)}
-          hint="Tracked hours"
+          hint={periodLabel}
           icon={<ClockIcon className="h-5 w-5" />}
           tone="indigo"
         />
         <SummaryCard
-          title="Projected Pay"
-          value={formatCurrency(projectedPay)}
-          hint="Using current hourly rate"
-          icon={<BanknotesIcon className="h-5 w-5" />}
-          tone="emerald"
-        />
-        <SummaryCard
           title="Average Day"
           value={formatDuration(averageDailyHours)}
-          hint="Across tracked days"
+          hint={periodLabel}
           icon={<ChartBarIcon className="h-5 w-5" />}
           tone="slate"
         />
         <SummaryCard
           title="Longest Shift"
           value={formatDuration(longestShiftHours)}
-          hint="Single entry"
+          hint={periodLabel}
           icon={<BoltIcon className="h-5 w-5" />}
           tone="amber"
         />
+        <SummaryCard
+          title="Shortest Shift"
+          value={filteredEntries.length === 0 ? '—' : formatDuration(shortestShiftHours)}
+          hint={periodLabel}
+          icon={<ClockIcon className="h-5 w-5" />}
+          tone="slate"
+        />
+        <SummaryCard
+          title="Overtime Hours"
+          value={formatDuration(overtimeHours)}
+          hint={periodLabel}
+          icon={<BoltIcon className="h-5 w-5" />}
+          tone="amber"
+        />
+        <SummaryCard
+          title="Entries"
+          value={rangeIsValid ? String(filteredEntries.length) : '—'}
+          hint={periodLabel}
+          icon={<QueueListIcon className="h-5 w-5" />}
+          tone="indigo"
+        />
       </div>
+
+      {rangeIsValid && (
+        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-500">{periodLabel}</p>
+              <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
+                Period Goal
+              </h2>
+            </div>
+            <p className="text-right text-sm font-bold text-slate-500">
+              {formatShortHours(periodGoalHours)} goal
+            </p>
+          </div>
+
+          {(() => {
+            const total = currentPeriodHours
+            const overGoal = total >= periodGoalHours
+            const regularPct = periodGoalHours > 0 ? Math.min((regularTrackedHours / periodGoalHours) * 100, 100) : 0
+            const overtimePct = periodGoalHours > 0 ? Math.min((overtimeHours / periodGoalHours) * 100, 100 - regularPct) : 0
+            const remainingHours = Math.max(0, periodGoalHours - total)
+
+            return (
+              <>
+                <div className="mt-6 h-5 overflow-hidden rounded-full bg-slate-100">
+                  <div className="flex h-full">
+                    <div
+                      className="h-full rounded-l-full bg-indigo-600 transition-all duration-500"
+                      style={{ width: `${regularPct}%` }}
+                    />
+                    {overtimePct > 0 && (
+                      <div
+                        className="h-full bg-amber-500 transition-all duration-500"
+                        style={{ width: `${overtimePct}%` }}
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-indigo-600" />
+                    <span className="font-semibold text-slate-700">{formatShortHours(regularTrackedHours)}</span>
+                    <span className="text-slate-500">regular</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    <span className="font-semibold text-slate-700">{formatShortHours(overtimeHours)}</span>
+                    <span className="text-slate-500">overtime</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-300" />
+                    <span className="font-semibold text-slate-700">
+                      {overGoal ? 'Goal exceeded' : formatShortHours(remainingHours)}
+                    </span>
+                    {!overGoal && <span className="text-slate-500">remaining</span>}
+                  </span>
+                </div>
+              </>
+            )
+          })()}
+        </section>
+      )}
 
       <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <p className="text-sm font-semibold text-slate-500">Pay period distribution</p>
@@ -1540,6 +1649,22 @@ function SettingsView({
               className={inputClassName}
             />
           </Field>
+
+          <Field label="Overworks rate (×)">
+            <input
+              type="number"
+              min="1"
+              step="0.05"
+              value={settings.overworksRate}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  overworksRate: Number(event.target.value)
+                }))
+              }
+              className={inputClassName}
+            />
+          </Field>
         </div>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -1564,6 +1689,7 @@ function SettingsView({
           <SettingsMetric label="Worker" value={settings.workerName || 'Not set'} />
           <SettingsMetric label="Hourly rate" value={formatCurrency(settings.hourlyRate)} />
           <SettingsMetric label="Weekly goal" value={`${settings.weeklyGoalHours.toFixed(1)} hours`} />
+          <SettingsMetric label="Overworks rate" value={`${settings.overworksRate.toFixed(2)}×`} />
           <SettingsMetric label="Storage" value="Supabase cloud database" />
         </div>
 
@@ -1758,15 +1884,22 @@ function defaultReportStartDate() {
   return formatInputDate(date)
 }
 
+function getEndOfWeek(date: Date): Date {
+  return addDays(getStartOfWeek(date), 4) // Friday
+}
+
 function buildReportPresetRanges() {
   const now = new Date()
 
   const yesterday = addDays(now, -1)
 
   return [
-    createReportPreset('This week', getStartOfWeek(now), now),
+    createReportPreset('This week to date', getStartOfWeek(now), now),
+    createReportPreset('This week', getStartOfWeek(now), getEndOfWeek(now)),
     createReportPreset('Last 2 weeks', addDays(yesterday, -13), yesterday),
-    createReportPreset('This month', getStartOfMonth(now), now),
+    createReportPreset('Last 4 weeks', addDays(yesterday, -27), yesterday),
+    createReportPreset('This month to date', getStartOfMonth(now), now),
+    createReportPreset('This month', getStartOfMonth(now), getEndOfMonth(now)),
     createReportPreset('Last month', getStartOfPreviousMonth(now), getEndOfPreviousMonth(now))
   ]
 }
@@ -1793,6 +1926,10 @@ function addDays(date: Date, days: number) {
 
 function getStartOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function getEndOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
 }
 
 function getStartOfPreviousMonth(date: Date) {
@@ -2052,9 +2189,70 @@ function Brand({ compact = false }: { compact?: boolean }) {
           compact ? 'text-2xl' : 'text-[1.9rem]'
         }`}
       >
-        WorkClock
+        PayReport
       </span>
     </div>
+  )
+}
+
+function PayBreakdownCard({
+  regularHours,
+  overtimeHours,
+  regularPay,
+  overtimePay,
+  hourlyRate,
+  overworksRate,
+  hint
+}: {
+  regularHours: number
+  overtimeHours: number
+  regularPay: number
+  overtimePay: number
+  hourlyRate: number
+  overworksRate: number
+  hint?: string
+}) {
+  const totalPay = regularPay + overtimePay
+
+  return (
+    <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-50 text-emerald-700">
+          <BanknotesIcon className="h-5 w-5" />
+        </div>
+        {hint ? <p className="text-right text-xs font-bold text-slate-500">{hint}</p> : null}
+      </div>
+      <h2 className="mt-5 text-sm font-semibold text-slate-500">Pay Breakdown</h2>
+      <p className="mt-2 text-[2rem] font-extrabold leading-none tracking-[-0.05em] text-slate-900">
+        {formatCurrency(totalPay)}
+      </p>
+      <div className="mt-5 space-y-3 text-sm">
+        <div className="flex items-start justify-between gap-4">
+          <span className="flex items-start gap-2">
+            <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
+            <span>
+              <span className="font-medium text-slate-700">Regular</span>
+              <span className="mt-0.5 block text-xs text-slate-400">{formatShortHours(regularHours)} × {formatCurrency(hourlyRate)}</span>
+            </span>
+          </span>
+          <span className="font-semibold text-slate-800">{formatCurrency(regularPay)}</span>
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <span className="flex items-start gap-2">
+            <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+            <span>
+              <span className="font-medium text-slate-700">Overtime</span>
+              <span className="mt-0.5 block text-xs text-slate-400">{formatShortHours(overtimeHours)} × {formatCurrency(hourlyRate * overworksRate)}</span>
+            </span>
+          </span>
+          <span className="font-semibold text-slate-800">{formatCurrency(overtimePay)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+          <span className="font-semibold text-slate-700">Total</span>
+          <span className="text-base font-bold text-slate-900">{formatCurrency(totalPay)}</span>
+        </div>
+      </div>
+    </section>
   )
 }
 

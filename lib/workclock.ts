@@ -12,6 +12,7 @@ export type Settings = {
   workerName: string
   hourlyRate: number
   weeklyGoalHours: number
+  overworksRate: number
   activeShiftStart: string | null
 }
 
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   workerName: 'Alex Johnson',
   hourlyRate: 28,
   weeklyGoalHours: 40,
+  overworksRate: 1.5,
   activeShiftStart: null
 }
 
@@ -215,6 +217,38 @@ export function formatInputDate(date: Date): string {
   return formatDateKey(date)
 }
 
+export function calculatePayFromHours(
+  totalHours: number,
+  goalHours: number,
+  hourlyRate: number,
+  overworksRate: number
+): number {
+  const regularHours = Math.min(totalHours, goalHours)
+  const overtimeHours = Math.max(0, totalHours - goalHours)
+  return regularHours * hourlyRate + overtimeHours * hourlyRate * overworksRate
+}
+
+export function calculatePeriodPay(
+  entries: Entry[],
+  weeklyGoalHours: number,
+  hourlyRate: number,
+  overworksRate: number
+): number {
+  const dailyDurations = buildDailyDurations(entries)
+  const periodHours: Record<string, number> = {}
+
+  for (const [dateKey, hours] of Object.entries(dailyDurations)) {
+    const periodStart = formatDateKey(getBiWeeklyPeriodStart(new Date(`${dateKey}T12:00:00`)))
+    periodHours[periodStart] = (periodHours[periodStart] ?? 0) + hours
+  }
+
+  const biWeeklyGoal = weeklyGoalHours * 2
+  return Object.values(periodHours).reduce(
+    (sum, periodTotal) => sum + calculatePayFromHours(periodTotal, biWeeklyGoal, hourlyRate, overworksRate),
+    0
+  )
+}
+
 export function formatTrend(trend: number | null): string {
   if (trend === null) {
     return 'No prior week'
@@ -247,6 +281,33 @@ export function getStartOfWeek(date: Date): Date {
   const diff = day === 0 ? -6 : 1 - day
   next.setDate(next.getDate() + diff)
   return next
+}
+
+// Fixed Monday anchor used to align all bi-weekly pay periods consistently.
+const BI_WEEKLY_ANCHOR = new Date('2024-01-01T00:00:00')
+
+export function getBiWeeklyPeriodStart(date: Date): Date {
+  const anchor = new Date(BI_WEEKLY_ANCHOR)
+  const daysDiff = Math.floor((date.getTime() - anchor.getTime()) / (1000 * 60 * 60 * 24))
+  const periodIndex = Math.floor(daysDiff / 14)
+  const result = new Date(anchor)
+  result.setDate(anchor.getDate() + periodIndex * 14)
+  result.setHours(0, 0, 0, 0)
+  return result
+}
+
+export function isDateInCurrentBiWeeklyPeriod(date: Date, now: Date): boolean {
+  const start = getBiWeeklyPeriodStart(now)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 14)
+  return date >= start && date < end
+}
+
+export function isDateInPreviousBiWeeklyPeriod(date: Date, now: Date): boolean {
+  const currentStart = getBiWeeklyPeriodStart(now)
+  const prevStart = new Date(currentStart)
+  prevStart.setDate(prevStart.getDate() - 14)
+  return date >= prevStart && date < currentStart
 }
 
 export function isSameDay(left: Date, right: Date): boolean {

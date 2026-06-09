@@ -2,7 +2,7 @@
   "name": "pay-report",
   "version": "1.0.0",
   "private": true,
-  "description": "WorkClock dashboard migrated to Next.js with Supabase auth and storage",
+  "description": "PayReport dashboard Next.js with Supabase auth and storage",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

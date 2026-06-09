@@ -3,6 +3,7 @@ create table if not exists public.profiles (
   worker_name text not null default 'Alex Johnson',
   hourly_rate double precision not null default 28,
   weekly_goal_hours double precision not null default 40,
+  overworks_rate double precision not null default 1.5,
   active_shift_start timestamptz,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -84,3 +85,6 @@ create policy "time_entries_delete_own"
 on public.time_entries
 for delete
 using (auth.uid() = user_id);
+
+alter table public.profiles
+  add column if not exists overworks_rate double precision not null default 1.5;

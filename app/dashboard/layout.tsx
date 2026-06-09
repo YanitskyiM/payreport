@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
-import { WorkClockApp } from '@/components/workclock-app'
+import { PayReportApp } from '@/components/workclock-app'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function DashboardLayout({
@@ -18,7 +18,7 @@ export default async function DashboardLayout({
 
   return (
     <>
-      <WorkClockApp
+      <PayReportApp
         userEmail={typeof claims.email === 'string' ? claims.email : ''}
         userId={claims.sub}
       />
