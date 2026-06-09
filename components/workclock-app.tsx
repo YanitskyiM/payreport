@@ -608,7 +608,7 @@ export function PayReportApp({ userEmail, userId }: PayReportAppProps) {
           </div>
         </aside>
 
-        <div className="flex flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
           <header className="px-4 pb-4 pt-4 sm:px-6 lg:px-8">
             <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1199,9 +1199,9 @@ function ReportsView({
   overworksRate: number
   workerName: string
 }) {
-  const [startDate, setStartDate] = useState(() => defaultReportStartDate())
-  const [endDate, setEndDate] = useState(() => formatInputDate(new Date()))
-  const [activePresetLabel, setActivePresetLabel] = useState<string | null>(null)
+  const [startDate, setStartDate] = useState(() => formatInputDate(getStartOfWeek(new Date())))
+  const [endDate, setEndDate] = useState(() => formatInputDate(getEndOfWeek(new Date())))
+  const [activePresetLabel, setActivePresetLabel] = useState<string | null>('This week')
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filteredEntries = useMemo(() => {
@@ -1272,20 +1272,23 @@ function ReportsView({
   const expectedRegularPay = expectedRegularHours * hourlyRate
   const expectedOvertimePay = expectedOvertimeHours * hourlyRate * overworksRate
   const periodBars = useMemo(() => {
+    if (!startDate || !endDate || endDate < startDate) return []
     const dailyDurations = buildDailyDurations(filteredEntries)
-
-    return Object.entries(dailyDurations)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([dateKey, hours]) => {
-        const d = new Date(`${dateKey}T12:00:00`)
-        return {
-          dateKey,
-          hours,
-          fullDate: formatEntryDate(d),
-          weekday: d.toLocaleDateString('en-US', { weekday: 'short' })
-        }
+    const bars = []
+    const cursor = new Date(`${startDate}T12:00:00`)
+    const end = new Date(`${endDate}T12:00:00`)
+    while (cursor <= end) {
+      const dateKey = formatInputDate(cursor)
+      bars.push({
+        dateKey,
+        hours: dailyDurations[dateKey] ?? 0,
+        fullDate: formatEntryDate(cursor),
+        weekday: cursor.toLocaleDateString('en-US', { weekday: 'short' })
       })
-  }, [filteredEntries])
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    return bars
+  }, [filteredEntries, startDate, endDate])
   const reportRangeLabel = rangeIsValid ? formatReportRangeLabel(startDate, endDate) : 'Select a valid range'
   const periodLabel = activePresetLabel ?? reportRangeLabel
   const presetRanges = useMemo(() => buildReportPresetRanges(), [])
@@ -1384,15 +1387,6 @@ function ReportsView({
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <PayBreakdownCard
-          regularHours={regularTrackedHours}
-          overtimeHours={overtimeHours}
-          regularPay={regularPay}
-          overtimePay={overtimePay}
-          hourlyRate={hourlyRate}
-          overworksRate={overworksRate}
-          hint={periodLabel}
-        />
-        <PayBreakdownCard
           title="Expected Salary"
           regularHours={expectedRegularHours}
           overtimeHours={expectedOvertimeHours}
@@ -1403,7 +1397,7 @@ function ReportsView({
           hint={periodLabel}
         />
         <SummaryCard
-          title="Pay Period Hours"
+          title="Toral  Hours"
           value={formatDuration(currentPeriodHours)}
           hint={periodLabel}
           icon={<ClockIcon className="h-5 w-5" />}
@@ -1443,6 +1437,15 @@ function ReportsView({
           hint={periodLabel}
           icon={<QueueListIcon className="h-5 w-5" />}
           tone="indigo"
+        />
+        <PayBreakdownCard
+            regularHours={regularTrackedHours}
+            overtimeHours={overtimeHours}
+            regularPay={regularPay}
+            overtimePay={overtimePay}
+            hourlyRate={hourlyRate}
+            overworksRate={overworksRate}
+            hint={periodLabel}
         />
       </div>
 
@@ -1522,7 +1525,7 @@ function ReportsView({
         ) : (
           <div className="mt-8 overflow-x-auto">
             <div
-              className="grid h-[240px] items-end gap-2 sm:h-[280px]"
+              className="grid h-[280px] gap-2 sm:h-[320px]"
               style={{
                 gridTemplateColumns: `repeat(${periodBars.length}, minmax(44px, 1fr))`,
                 minWidth: `${Math.max(periodBars.length * 52, 100)}px`
@@ -1530,21 +1533,34 @@ function ReportsView({
             >
               {(() => {
                 const peak = Math.max(...periodBars.map((b) => b.hours), 1)
-                return periodBars.map((bar) => (
-                  <div key={bar.dateKey} className="flex h-full flex-col items-center justify-end gap-2">
-                    <div className="flex h-full w-full items-end justify-center rounded-xl bg-slate-50 p-1">
-                      <div
-                        className="w-full rounded-xl bg-gradient-to-t from-indigo-600 to-indigo-400 transition-all duration-300"
-                        style={{ height: `${Math.max((bar.hours / peak) * 100, 6)}%` }}
-                      />
+                return periodBars.map((bar) => {
+                  const regularH = (Math.min(bar.hours, 8) / peak) * 100
+                  const overtimeH = (Math.max(bar.hours - 8, 0) / peak) * 100
+                  const minH = bar.hours > 0 ? 6 : 0
+                  return (
+                    <div key={bar.dateKey} className="flex h-full flex-col items-center gap-1.5">
+                      <div className="flex w-full flex-1 items-end justify-center rounded-xl bg-slate-50 p-1">
+                        <div className="flex w-full flex-col items-stretch justify-end" style={{ height: `${Math.max(regularH + overtimeH, minH)}%` }}>
+                          {overtimeH > 0 && (
+                            <div
+                              className="w-full shrink-0 rounded-t-lg bg-gradient-to-t from-amber-500 to-amber-400 transition-all duration-300"
+                              style={{ height: `${(overtimeH / (regularH + overtimeH)) * 100}%` }}
+                            />
+                          )}
+                          <div
+                            className={`w-full shrink-0 bg-gradient-to-t from-indigo-600 to-indigo-400 transition-all duration-300 ${overtimeH > 0 ? 'rounded-b-lg' : 'rounded-lg'}`}
+                            style={{ height: `${(regularH / (regularH + overtimeH || 1)) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-center">
+                        <p className="text-[10px] font-bold text-slate-600">{bar.weekday}</p>
+                        <p className="text-[10px] text-slate-500">{new Date(`${bar.dateKey}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                        <p className="text-[10px] text-slate-400">{bar.hours > 0 ? formatShortHours(bar.hours) : '—'}</p>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-[10px] font-bold text-slate-600">{bar.weekday}</p>
-                      <p className="text-[10px] text-slate-500">{new Date(`${bar.dateKey}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
-                      <p className="text-[10px] text-slate-400">{formatShortHours(bar.hours)}</p>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               })()}
             </div>
           </div>
@@ -1890,14 +1906,6 @@ function DeleteEntryModal({
       </div>
     </div>
   )
-}
-
-function defaultReportStartDate() {
-  const date = new Date()
-  const day = date.getDay()
-  const diff = day === 0 ? -13 : 1 - day - 7
-  date.setDate(date.getDate() + diff)
-  return formatInputDate(date)
 }
 
 function getEndOfWeek(date: Date): Date {
