@@ -228,35 +228,6 @@ export function calculatePayFromHours(
   return regularHours * hourlyRate + overtimeHours * hourlyRate * overworksRate
 }
 
-export function calculatePeriodPay(
-  entries: Entry[],
-  weeklyGoalHours: number,
-  hourlyRate: number,
-  overworksRate: number
-): number {
-  const dailyDurations = buildDailyDurations(entries)
-  const periodHours: Record<string, number> = {}
-
-  for (const [dateKey, hours] of Object.entries(dailyDurations)) {
-    const periodStart = formatDateKey(getBiWeeklyPeriodStart(new Date(`${dateKey}T12:00:00`)))
-    periodHours[periodStart] = (periodHours[periodStart] ?? 0) + hours
-  }
-
-  const biWeeklyGoal = weeklyGoalHours * 2
-  return Object.values(periodHours).reduce(
-    (sum, periodTotal) => sum + calculatePayFromHours(periodTotal, biWeeklyGoal, hourlyRate, overworksRate),
-    0
-  )
-}
-
-export function formatTrend(trend: number | null): string {
-  if (trend === null) {
-    return 'No prior week'
-  }
-
-  const sign = trend >= 0 ? '+' : ''
-  return `${sign}${trend.toFixed(0)}% vs last week`
-}
 
 export function goalHint(progress: number): string {
   if (progress >= 1) {
@@ -323,11 +294,4 @@ export function isDateInCurrentWeek(date: Date, now: Date): boolean {
   const end = new Date(start)
   end.setDate(end.getDate() + 7)
   return date >= start && date < end
-}
-
-export function isDateInPreviousWeek(date: Date, now: Date): boolean {
-  const currentWeekStart = getStartOfWeek(now)
-  const previousWeekStart = new Date(currentWeekStart)
-  previousWeekStart.setDate(previousWeekStart.getDate() - 7)
-  return date >= previousWeekStart && date < currentWeekStart
 }
