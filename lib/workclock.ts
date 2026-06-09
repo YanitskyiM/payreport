@@ -27,6 +27,8 @@ export type WeeklyBar = {
   dayName: string
   fullDate: string
   heightPercent: number
+  regularHeightPercent: number
+  overtimeHeightPercent: number
   hours: number
   label: string
 }
@@ -67,6 +69,8 @@ export function buildWeeklyChartData(
         day: 'numeric'
       }),
       heightPercent: 0,
+      regularHeightPercent: 0,
+      overtimeHeightPercent: 0,
       hours,
       label: currentDate.toLocaleDateString('en-US', { weekday: 'short' })
     })
@@ -74,10 +78,16 @@ export function buildWeeklyChartData(
 
   const peak = Math.max(...dailyHours.map((day) => day.hours), 1)
 
-  return dailyHours.map((day) => ({
-    ...day,
-    heightPercent: (day.hours / peak) * 100
-  }))
+  return dailyHours.map((day) => {
+    const regularH = (Math.min(day.hours, 8) / peak) * 100
+    const overtimeH = (Math.max(day.hours - 8, 0) / peak) * 100
+    return {
+      ...day,
+      heightPercent: regularH + overtimeH,
+      regularHeightPercent: regularH,
+      overtimeHeightPercent: overtimeH,
+    }
+  })
 }
 
 export function buildDailyDurations(entries: Entry[]): Record<string, number> {
@@ -228,35 +238,6 @@ export function calculatePayFromHours(
   return regularHours * hourlyRate + overtimeHours * hourlyRate * overworksRate
 }
 
-export function calculatePeriodPay(
-  entries: Entry[],
-  weeklyGoalHours: number,
-  hourlyRate: number,
-  overworksRate: number
-): number {
-  const dailyDurations = buildDailyDurations(entries)
-  const periodHours: Record<string, number> = {}
-
-  for (const [dateKey, hours] of Object.entries(dailyDurations)) {
-    const periodStart = formatDateKey(getBiWeeklyPeriodStart(new Date(`${dateKey}T12:00:00`)))
-    periodHours[periodStart] = (periodHours[periodStart] ?? 0) + hours
-  }
-
-  const biWeeklyGoal = weeklyGoalHours * 2
-  return Object.values(periodHours).reduce(
-    (sum, periodTotal) => sum + calculatePayFromHours(periodTotal, biWeeklyGoal, hourlyRate, overworksRate),
-    0
-  )
-}
-
-export function formatTrend(trend: number | null): string {
-  if (trend === null) {
-    return 'No prior week'
-  }
-
-  const sign = trend >= 0 ? '+' : ''
-  return `${sign}${trend.toFixed(0)}% vs last week`
-}
 
 export function goalHint(progress: number): string {
   if (progress >= 1) {
@@ -296,19 +277,6 @@ export function getBiWeeklyPeriodStart(date: Date): Date {
   return result
 }
 
-export function isDateInCurrentBiWeeklyPeriod(date: Date, now: Date): boolean {
-  const start = getBiWeeklyPeriodStart(now)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 14)
-  return date >= start && date < end
-}
-
-export function isDateInPreviousBiWeeklyPeriod(date: Date, now: Date): boolean {
-  const currentStart = getBiWeeklyPeriodStart(now)
-  const prevStart = new Date(currentStart)
-  prevStart.setDate(prevStart.getDate() - 14)
-  return date >= prevStart && date < currentStart
-}
 
 export function isSameDay(left: Date, right: Date): boolean {
   return (
@@ -323,11 +291,4 @@ export function isDateInCurrentWeek(date: Date, now: Date): boolean {
   const end = new Date(start)
   end.setDate(end.getDate() + 7)
   return date >= start && date < end
-}
-
-export function isDateInPreviousWeek(date: Date, now: Date): boolean {
-  const currentWeekStart = getStartOfWeek(now)
-  const previousWeekStart = new Date(currentWeekStart)
-  previousWeekStart.setDate(previousWeekStart.getDate() - 7)
-  return date >= previousWeekStart && date < currentWeekStart
 }

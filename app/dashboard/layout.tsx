@@ -17,12 +17,10 @@ export default async function DashboardLayout({
   }
 
   return (
-    <>
-      <PayReportApp
-        userEmail={typeof claims.email === 'string' ? claims.email : ''}
-        userId={claims.sub}
-      />
-      <div className="hidden">{children}</div>
-    </>
+    <PayReportApp
+      userEmail={typeof claims.email === 'string' ? claims.email : ''}
+      userId={claims.sub}
+      entriesSlot={children}
+    />
   )
 }
