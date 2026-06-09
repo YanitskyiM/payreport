@@ -242,11 +242,6 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
     settings.weeklyGoalHours <= 0 ? 0 : weekHours / settings.weeklyGoalHours
   const recentEntries = sortedEntries.slice(0, 6)
 
-  const weeklyBars = useMemo(
-    () => buildWeeklyChartData(sortedEntries, now, activeShiftDurationMs),
-    [activeShiftDurationMs, now, sortedEntries]
-  )
-
   const pageTitle = getPageTitle(currentView)
 
   function handleNavigationStart(href: string) {
@@ -634,6 +629,8 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
                 activeShiftStart={settings.activeShiftStart}
                 pendingShift={pendingShift}
                 earningsTrend={earningsTrend}
+                entries={sortedEntries}
+                now={now}
                 onAddManualEntry={handleOpenNewManualEntry}
                 onContinueShift={() => void handleContinueShift()}
                 onSaveShift={() => void handleSavePendingShift()}
@@ -644,7 +641,6 @@ export function WorkClockApp({ userEmail, userId }: WorkClockAppProps) {
                 settings={settings}
                 todayHours={todayHours}
                 weekHours={weekHours}
-                weeklyBars={weeklyBars}
                 weeklyGoalProgress={weeklyGoalProgress}
                 onDeleteEntry={handleRequestDeleteEntry}
                 onEditEntry={handleEditEntry}
@@ -748,6 +744,8 @@ function DashboardView({
   activeShiftStart,
   pendingShift,
   earningsTrend,
+  entries,
+  now,
   onAddManualEntry,
   onContinueShift,
   onSaveShift,
@@ -758,7 +756,6 @@ function DashboardView({
   settings,
   todayHours,
   weekHours,
-  weeklyBars,
   weeklyGoalProgress,
   onDeleteEntry,
   onEditEntry
@@ -767,6 +764,8 @@ function DashboardView({
   activeShiftStart: string | null
   pendingShift: PendingShift | null
   earningsTrend: number | null
+  entries: Entry[]
+  now: Date
   onAddManualEntry: () => void
   onContinueShift: () => void
   onSaveShift: () => void
@@ -777,11 +776,34 @@ function DashboardView({
   settings: Settings
   todayHours: number
   weekHours: number
-  weeklyBars: WeeklyBar[]
   weeklyGoalProgress: number
   onDeleteEntry: (entry: Entry) => void
   onEditEntry: (entry: Entry) => void
 }) {
+  const [weekOffset, setWeekOffset] = useState(0)
+
+  const chartNow = useMemo(() => {
+    if (weekOffset === 0) return now
+    const d = new Date(now)
+    d.setDate(d.getDate() + weekOffset * 7)
+    return d
+  }, [now, weekOffset])
+
+  const weeklyBars = useMemo(
+    () => buildWeeklyChartData(entries, chartNow, weekOffset === 0 ? activeShiftDurationMs : 0),
+    [activeShiftDurationMs, chartNow, entries, weekOffset]
+  )
+
+  const weekLabel = useMemo(() => {
+    const start = getStartOfWeek(chartNow)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 6)
+    if (weekOffset === 0) return 'This week'
+    const fmt = (d: Date) =>
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    return `${fmt(start)} – ${fmt(end)}`
+  }, [chartNow, weekOffset])
+
   return (
     <section className="space-y-6">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
@@ -916,26 +938,50 @@ function DashboardView({
                 Hours by day
               </h2>
             </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-              This week
-            </span>
+            <div className="flex items-center gap-1 rounded-full bg-slate-100 px-1 py-1">
+              <button
+                type="button"
+                onClick={() => { setWeekOffset((o) => o - 1) }}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-slate-800"
+                aria-label="Previous week"
+              >
+                ‹
+              </button>
+              <span className="min-w-[80px] text-center text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                {weekLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setWeekOffset((o) => Math.min(o + 1, 0)) }}
+                disabled={weekOffset === 0}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label="Next week"
+              >
+                ›
+              </button>
+            </div>
           </div>
 
-          <div className="mt-8 grid h-[240px] grid-cols-7 items-end gap-3 sm:h-[280px]">
-            {weeklyBars.map((bar) => (
-              <div key={bar.label} className="flex h-full flex-col items-center justify-end gap-3">
-                <div className="flex h-full w-full items-end justify-center rounded-2xl bg-slate-50 p-2">
+          <div className="mt-8">
+            <div className="grid h-[220px] grid-cols-7 items-end gap-3 sm:h-[260px]">
+              {weeklyBars.map((bar) => (
+                <div key={bar.label} className="flex h-full w-full items-end justify-center rounded-2xl bg-slate-50 p-2">
                   <div
                     className="w-full rounded-2xl bg-gradient-to-t from-indigo-600 to-indigo-400"
                     style={{ height: `${Math.max(bar.heightPercent, 8)}%` }}
                   />
                 </div>
-                <div className="text-center">
+              ))}
+            </div>
+            <div className="mt-2 grid grid-cols-7 gap-3">
+              {weeklyBars.map((bar) => (
+                <div key={bar.label} className="text-center">
                   <p className="text-xs font-bold text-slate-600">{bar.label}</p>
-                  <p className="text-xs text-slate-400">{formatShortHours(bar.hours)}</p>
+                  <p className="text-[10px] text-slate-500">{bar.fullDate}</p>
+                  <p className="text-[10px] text-slate-400">{formatShortHours(bar.hours)}</p>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
 
@@ -1194,11 +1240,15 @@ function ReportsView({
 
     return Object.entries(dailyDurations)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([dateKey, hours]) => ({
-        dateKey,
-        hours,
-        fullDate: formatEntryDate(new Date(`${dateKey}T12:00:00`))
-      }))
+      .map(([dateKey, hours]) => {
+        const d = new Date(`${dateKey}T12:00:00`)
+        return {
+          dateKey,
+          hours,
+          fullDate: formatEntryDate(d),
+          weekday: d.toLocaleDateString('en-US', { weekday: 'short' })
+        }
+      })
   }, [filteredEntries])
   const reportRangeLabel = rangeIsValid ? formatReportRangeLabel(startDate, endDate) : 'Select a valid range'
   const presetRanges = useMemo(() => buildReportPresetRanges(), [])
@@ -1339,6 +1389,46 @@ function ReportsView({
       <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <p className="text-sm font-semibold text-slate-500">Pay period distribution</p>
         <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
+          Hours by day
+        </h2>
+
+        {periodBars.length === 0 ? (
+          <p className="mt-6 text-sm text-slate-500">No entries found for the selected range.</p>
+        ) : (
+          <div className="mt-8 overflow-x-auto">
+            <div
+              className="grid h-[240px] items-end gap-2 sm:h-[280px]"
+              style={{
+                gridTemplateColumns: `repeat(${periodBars.length}, minmax(44px, 1fr))`,
+                minWidth: `${Math.max(periodBars.length * 52, 100)}px`
+              }}
+            >
+              {(() => {
+                const peak = Math.max(...periodBars.map((b) => b.hours), 1)
+                return periodBars.map((bar) => (
+                  <div key={bar.dateKey} className="flex h-full flex-col items-center justify-end gap-2">
+                    <div className="flex h-full w-full items-end justify-center rounded-xl bg-slate-50 p-1">
+                      <div
+                        className="w-full rounded-xl bg-gradient-to-t from-indigo-600 to-indigo-400 transition-all duration-300"
+                        style={{ height: `${Math.max((bar.hours / peak) * 100, 6)}%` }}
+                      />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-slate-600">{bar.weekday}</p>
+                      <p className="text-[10px] text-slate-500">{new Date(`${bar.dateKey}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                      <p className="text-[10px] text-slate-400">{formatShortHours(bar.hours)}</p>
+                    </div>
+                  </div>
+                ))
+              })()}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <p className="text-sm font-semibold text-slate-500">Pay period distribution</p>
+        <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
           Daily breakdown
         </h2>
         <div className="mt-8 grid gap-4 md:grid-cols-2">
@@ -1353,18 +1443,22 @@ function ReportsView({
                   {formatShortHours(bar.hours)}
                 </p>
               </div>
-              <div className="mt-4 h-2 rounded-full bg-slate-200">
-                <div
-                  className="h-full rounded-full bg-indigo-600"
-                  style={{
-                    width: `${Math.max(
-                      periodBars.length > 0
-                        ? (bar.hours / Math.max(...periodBars.map((item) => item.hours), 1)) * 100
-                        : 0,
-                      bar.hours > 0 ? 8 : 0
-                    )}%`
-                  }}
-                />
+              <div className="mt-4 h-2 rounded-full bg-slate-200 overflow-hidden">
+                {(() => {
+                  const peak = Math.max(...periodBars.map((item) => item.hours), 1)
+                  const normalHours = Math.min(bar.hours, 8)
+                  const overtimeHours = Math.max(bar.hours - 8, 0)
+                  const normalWidth = periodBars.length > 0 ? (normalHours / peak) * 100 : 0
+                  const overtimeWidth = periodBars.length > 0 ? (overtimeHours / peak) * 100 : 0
+                  return (
+                    <div className="flex h-full">
+                      <div className="h-full bg-indigo-600" style={{ width: `${Math.max(normalWidth, bar.hours > 0 ? 8 : 0)}%` }} />
+                      {overtimeHours > 0 && (
+                        <div className="h-full bg-amber-500" style={{ width: `${overtimeWidth}%` }} />
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           ))}
