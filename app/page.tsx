@@ -1,13 +1,35 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+'use client'
 
-export default async function HomePage() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { LaunchScreen } from '@/components/launch-screen'
+import { createClient } from '@/lib/supabase/client'
 
-  if (data?.claims?.sub) {
-    redirect('/dashboard')
-  }
+export default function HomePage() {
+  const router = useRouter()
 
-  redirect('/login')
+  useEffect(() => {
+    const supabase = createClient()
+    let isActive = true
+
+    async function resolveLaunchRoute() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!isActive) {
+        return
+      }
+
+      router.replace(session?.user ? '/dashboard' : '/login')
+    }
+
+    void resolveLaunchRoute()
+
+    return () => {
+      isActive = false
+    }
+  }, [router])
+
+  return <LaunchScreen />
 }
