@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
-import { IOS_SPLASH_SCREENS } from '@/lib/pwa/splash-screens'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -40,16 +39,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" style={{ backgroundColor: '#f1f5f9' }}>
-      <head>
-        {IOS_SPLASH_SCREENS.map((screen) => (
-          <link
-            key={screen.filename}
-            rel="apple-touch-startup-image"
-            href={`/splash/${screen.filename}`}
-            media={screen.media}
-          />
-        ))}
-      </head>
       <body style={{ backgroundColor: '#f1f5f9' }}>
         <div className="app-shell" style={{ backgroundColor: '#f1f5f9' }}>
           {children}

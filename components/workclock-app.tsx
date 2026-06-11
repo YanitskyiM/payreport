@@ -17,14 +17,15 @@ import {
   isDateInCurrentWeek,
   HOUR_MS,
   getEntryDurationMs,
+  type View,
 } from '@/lib/workclock'
 import type { Entry, ManualFormState, PayReportAppProps, PendingShift, ProfileRow } from './workclock/types'
 import { NAV_ITEMS } from './workclock/constants'
 import { mapProfileToSettings, mapRowToEntry, toInputTime } from './workclock/utils'
-import { DashboardLoadingOverlay } from './workclock/ui/DashboardLoadingOverlay'
 import { Brand } from './workclock/ui/Brand'
 import { SidebarNavItem } from './workclock/ui/SidebarNavItem'
 import { MobileNavItem } from './workclock/ui/MobileNavItem'
+import { DashboardContentSkeleton } from './workclock/ui/DashboardSkeletons'
 import { DashboardView } from './workclock/views/DashboardView'
 import { EntriesView } from './workclock/views/EntriesView'
 import { ReportsView } from './workclock/views/ReportsView'
@@ -47,6 +48,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
   const [isDeletingEntry, setIsDeletingEntry] = useState(false)
   const [isBusy, setIsBusy] = useState(true)
   const [isRouteLoading, setIsRouteLoading] = useState(false)
+  const [pendingView, setPendingView] = useState<View | null>(null)
   const [now, setNow] = useState(() => new Date())
   const [pendingShift, setPendingShift] = useState<PendingShift | null>(null)
   const [manualForm, setManualForm] = useState<ManualFormState>(() =>
@@ -84,6 +86,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
       routeLoadingTimeoutRef.current = null
     }
     setIsRouteLoading(false)
+    setPendingView(null)
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [pathname])
 
@@ -135,10 +138,12 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
   const weeklyGoalProgress =
     settings.weeklyGoalHours <= 0 ? 0 : weekHours / settings.weeklyGoalHours
   const recentEntries = sortedEntries.slice(0, 4)
-  const pageTitle = getPageTitle(currentView)
+  const activeView = isRouteLoading && pendingView ? pendingView : currentView
+  const pageTitle = getPageTitle(activeView)
 
   function handleNavigationStart(href: string) {
     if (href !== pathname) {
+      setPendingView(getViewFromPathname(href))
       if (routeLoadingTimeoutRef.current !== null) {
         window.clearTimeout(routeLoadingTimeoutRef.current)
       }
@@ -384,7 +389,6 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
-      {(isBusy || isRouteLoading) && <DashboardLoadingOverlay />}
       <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col lg:flex-row lg:gap-6 lg:px-6 lg:py-6">
         <aside className="hidden w-[280px] shrink-0 lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)]">
           <div className="flex h-full w-full flex-col rounded-[32px] border border-slate-200 bg-white px-6 py-8 shadow-sm">
@@ -398,7 +402,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
                 {NAV_ITEMS.map((item) => (
                   <SidebarNavItem
                     key={item.view}
-                    active={currentView === item.view}
+                    active={activeView === item.view}
                     href={item.href}
                     icon={item.icon}
                     label={item.label}
@@ -458,7 +462,11 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
               </div>
             ) : null}
 
-            {currentView === 'dashboard' ? (
+            {isBusy || isRouteLoading ? (
+              <DashboardContentSkeleton view={activeView} />
+            ) : null}
+
+            {!isBusy && !isRouteLoading && currentView === 'dashboard' ? (
               <DashboardView
                 activeShiftDurationMs={activeShiftDurationMs}
                 activeShiftStart={settings.activeShiftStart}
@@ -479,7 +487,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
               />
             ) : null}
 
-            {currentView === 'entries' ? (
+            {!isBusy && !isRouteLoading && currentView === 'entries' ? (
               entriesSlot ?? (
                 <EntriesView
                   entries={sortedEntries}
@@ -490,7 +498,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
               )
             ) : null}
 
-            {currentView === 'reports' ? (
+            {!isBusy && !isRouteLoading && currentView === 'reports' ? (
               <ReportsView
                 entries={sortedEntries}
                 hourlyRate={settings.hourlyRate}
@@ -500,7 +508,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
               />
             ) : null}
 
-            {currentView === 'settings' ? (
+            {!isBusy && !isRouteLoading && currentView === 'settings' ? (
               <SettingsView
                 notice={settingsNotice}
                 onSave={(event) => void handleSaveSettings(event)}
@@ -518,7 +526,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
           {NAV_ITEMS.map((item) => (
             <MobileNavItem
               key={item.view}
-              active={currentView === item.view}
+              active={activeView === item.view}
               href={item.href}
               icon={item.icon}
               label={item.label}
