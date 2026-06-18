@@ -1,7 +1,9 @@
 'use client'
 
 import { BoltIcon, ChartBarIcon, ChevronDownIcon, ClockIcon, QueueListIcon } from '@heroicons/react/24/outline'
+import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import {
   HOUR_MS,
   buildDailyDurations,
@@ -11,27 +13,29 @@ import {
   formatShortHours,
   getEntryDurationMs,
 } from '@/lib/workclock'
-import type { Entry } from '../types'
+import { workclockQueryKeys } from '@/lib/workclock-query-keys'
+import { createInputDateRange, fetchEntriesInRange } from '../data'
 import { SummaryCard } from '../ui/SummaryCard'
 import { PayBreakdownCard } from '../ui/PayBreakdownCard'
 import { Field } from '../ui/Field'
+import { ReportsViewSkeleton } from '../ui/DashboardSkeletons'
 import { inputClassName } from '../constants'
 import {
   buildReportPresetRanges,
-  filterEntriesByRange,
   formatReportRangeLabel,
 } from '../report-utils'
 import { createPayPeriodPdf } from '../pdf'
 
 type ReportsViewProps = {
-  entries: Entry[]
   hourlyRate: number
   weeklyGoalHours: number
   overworksRate: number
   workerName: string
+  userId: string
 }
 
-export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRate, workerName }: ReportsViewProps) {
+export function ReportsView({ hourlyRate, weeklyGoalHours, overworksRate, workerName, userId }: ReportsViewProps) {
+  const supabase = useMemo(() => createClient(), [])
   const [startDate, setStartDate] = useState(() => {
     const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
     const twoWeeksAgo = new Date(yesterday); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 13)
@@ -45,13 +49,18 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const todayStr = formatInputDate(new Date())
-
-  const filteredEntries = useMemo(
-    () => filterEntriesByRange(entries, startDate, endDate),
-    [entries, startDate, endDate]
-  )
-
   const rangeIsValid = Boolean(startDate && endDate && endDate >= startDate)
+
+  const reportEntriesQuery = useQuery({
+    enabled: rangeIsValid,
+    queryKey: workclockQueryKeys.reportEntries(userId, startDate, endDate),
+    queryFn: () => fetchEntriesInRange(supabase, userId, createInputDateRange(startDate, endDate)),
+  })
+
+  const filteredEntries = reportEntriesQuery.data ?? []
+  const reportError = reportEntriesQuery.error instanceof Error ? reportEntriesQuery.error.message : null
+  const reportIsInitialLoading = reportEntriesQuery.isLoading
+  const reportIsLoading = reportEntriesQuery.isLoading || reportEntriesQuery.isFetching
 
   const currentPeriodHours = useMemo(
     () => filteredEntries.reduce((sum, entry) => sum + getEntryDurationMs(entry), 0) / HOUR_MS,
@@ -137,11 +146,15 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
   const presetRanges = useMemo(() => buildReportPresetRanges(), [])
 
   function handleGeneratePdf() {
-    if (!rangeIsValid) return
+    if (!rangeIsValid || reportIsLoading || reportError) return
     const bytes = createPayPeriodPdf({ endDate, entries: filteredEntries, startDate, workerName })
     const url = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }))
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+
+  if (reportIsInitialLoading) {
+    return <ReportsViewSkeleton />
   }
 
   return (
@@ -224,15 +237,21 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
               <button
                 type="button"
                 onClick={handleGeneratePdf}
-                disabled={!rangeIsValid}
+                disabled={!rangeIsValid || reportIsLoading || Boolean(reportError)}
                 className="inline-flex h-12 items-center justify-center rounded-2xl bg-indigo-600 px-5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                Download PDF Report
+                {reportIsLoading ? 'Loading report…' : 'Download PDF Report'}
               </button>
             </div>
           </>
         )}
       </section>
+
+      {reportError ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          Failed to load report entries: {reportError}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <PayBreakdownCard
@@ -246,7 +265,7 @@ export function ReportsView({ entries, hourlyRate, weeklyGoalHours, overworksRat
           hint={periodLabel}
         />
         <SummaryCard
-          title="Toral  Hours"
+          title="Total Hours"
           value={formatDuration(currentPeriodHours)}
           hint={periodLabel}
           icon={<ClockIcon className="h-5 w-5" />}

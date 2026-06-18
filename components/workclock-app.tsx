@@ -1,9 +1,11 @@
 'use client'
 
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { workclockQueryKeys } from '@/lib/workclock-query-keys'
 import {
   DEFAULT_SETTINGS,
   createDefaultManualForm,
@@ -21,7 +23,8 @@ import {
 } from '@/lib/workclock'
 import type { Entry, ManualFormState, PayReportAppProps, PendingShift, ProfileRow } from './workclock/types'
 import { NAV_ITEMS } from './workclock/constants'
-import { mapProfileToSettings, mapRowToEntry, toInputTime } from './workclock/utils'
+import { mapProfileToSettings, toInputTime } from './workclock/utils'
+import { createWeekRange, fetchEntries, fetchEntriesInRange, fetchRecentEntries } from './workclock/data'
 import { Brand } from './workclock/ui/Brand'
 import { SidebarNavItem } from './workclock/ui/SidebarNavItem'
 import { MobileNavItem } from './workclock/ui/MobileNavItem'
@@ -35,18 +38,16 @@ import { DeleteEntryModal } from './workclock/modals/DeleteEntryModal'
 
 export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppProps) {
   const supabase = useMemo(() => createClient(), [])
+  const queryClient = useQueryClient()
   const pathname = usePathname()
   const routeLoadingTimeoutRef = useRef<number | null>(null)
-  const [entries, setEntries] = useState<Entry[]>([])
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [manualError, setManualError] = useState<string | null>(null)
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
   const [deleteEntryTarget, setDeleteEntryTarget] = useState<Entry | null>(null)
   const [isDeletingEntry, setIsDeletingEntry] = useState(false)
-  const [isBusy, setIsBusy] = useState(true)
   const [isRouteLoading, setIsRouteLoading] = useState(false)
   const [pendingView, setPendingView] = useState<View | null>(null)
   const [now, setNow] = useState(() => new Date())
@@ -55,7 +56,59 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     createDefaultManualForm(new Date())
   )
   const currentView = getViewFromPathname(pathname)
+  const usesClientEntriesView = currentView === 'entries' && !entriesSlot
   const isOverlayOpen = isManualEntryOpen || deleteEntryTarget !== null
+  const entriesQueryKey = useMemo(() => workclockQueryKeys.entries(userId), [userId])
+  const profileQueryKey = useMemo(() => workclockQueryKeys.profile(userId), [userId])
+  const dashboardWeekRange = useMemo(() => createWeekRange(now), [now])
+  const dashboardEntriesQueryKey = useMemo(
+    () => workclockQueryKeys.dashboardEntries(userId, dashboardWeekRange.startIso, dashboardWeekRange.endExclusiveIso),
+    [dashboardWeekRange.endExclusiveIso, dashboardWeekRange.startIso, userId]
+  )
+  const dashboardRecentEntriesQueryKey = useMemo(
+    () => workclockQueryKeys.dashboardRecentEntries(userId),
+    [userId]
+  )
+  const profileQuery = useQuery({
+    queryKey: profileQueryKey,
+    queryFn: fetchOrCreateProfile,
+  })
+  const entriesQuery = useQuery({
+    enabled: usesClientEntriesView,
+    queryKey: entriesQueryKey,
+    queryFn: () => fetchEntries(supabase, userId),
+  })
+  const dashboardEntriesQuery = useQuery({
+    enabled: currentView === 'dashboard',
+    queryKey: dashboardEntriesQueryKey,
+    queryFn: () => fetchEntriesInRange(supabase, userId, dashboardWeekRange),
+  })
+  const dashboardRecentEntriesQuery = useQuery({
+    enabled: currentView === 'dashboard',
+    queryKey: dashboardRecentEntriesQueryKey,
+    queryFn: () => fetchRecentEntries(supabase, userId),
+  })
+  const entries =
+    currentView === 'dashboard'
+      ? dashboardEntriesQuery.data ?? []
+      : usesClientEntriesView
+        ? entriesQuery.data ?? []
+        : []
+  const loadError =
+    profileQuery.error instanceof Error
+      ? profileQuery.error.message
+      : usesClientEntriesView && entriesQuery.error instanceof Error
+        ? entriesQuery.error.message
+        : currentView === 'dashboard' && dashboardEntriesQuery.error instanceof Error
+          ? dashboardEntriesQuery.error.message
+          : currentView === 'dashboard' && dashboardRecentEntriesQuery.error instanceof Error
+            ? dashboardRecentEntriesQuery.error.message
+        : null
+  const isBusy =
+    profileQuery.isLoading ||
+    (usesClientEntriesView && entriesQuery.isLoading) ||
+    (currentView === 'dashboard' &&
+      (dashboardEntriesQuery.isLoading || dashboardRecentEntriesQuery.isLoading))
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(new Date()), 1000)
@@ -70,7 +123,11 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     }
   }, [isManualEntryOpen, now])
 
-  useEffect(() => { void loadData() }, [userId])
+  useEffect(() => {
+    if (profileQuery.data) {
+      setSettings(mapProfileToSettings(profileQuery.data))
+    }
+  }, [profileQuery.data])
 
   useEffect(() => {
     return () => {
@@ -137,7 +194,8 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
 
   const weeklyGoalProgress =
     settings.weeklyGoalHours <= 0 ? 0 : weekHours / settings.weeklyGoalHours
-  const recentEntries = sortedEntries.slice(0, 4)
+  const recentEntries =
+    currentView === 'dashboard' ? dashboardRecentEntriesQuery.data ?? [] : sortedEntries.slice(0, 4)
   const activeView = isRouteLoading && pendingView ? pendingView : currentView
   const pageTitle = getPageTitle(activeView)
 
@@ -151,30 +209,6 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
         setIsRouteLoading(true)
         routeLoadingTimeoutRef.current = null
       }, 180)
-    }
-  }
-
-  async function loadData() {
-    setIsBusy(true)
-    setLoadError(null)
-
-    try {
-      const profile = await fetchOrCreateProfile()
-      const { data: entryRows, error: entryError } = await supabase
-        .from('time_entries')
-        .select('id, start_at, end_at, source, note')
-        .eq('user_id', userId)
-        .order('start_at', { ascending: false })
-
-      if (entryError) throw entryError
-
-      setSettings(mapProfileToSettings(profile))
-      setEntries((entryRows ?? []).map(mapRowToEntry))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not load Supabase data.'
-      setLoadError(message)
-    } finally {
-      setIsBusy(false)
     }
   }
 
@@ -216,6 +250,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     if (error) { setSettingsNotice(error.message); return }
     setPendingShift(null)
     setSettings((current) => ({ ...current, activeShiftStart: nextStart }))
+    void queryClient.invalidateQueries({ queryKey: profileQueryKey })
   }
 
   async function handleStopShift() {
@@ -226,6 +261,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     if (error) { setSettingsNotice(error.message); return }
     setPendingShift({ start: settings.activeShiftStart, end })
     setSettings((current) => ({ ...current, activeShiftStart: null }))
+    void queryClient.invalidateQueries({ queryKey: profileQueryKey })
   }
 
   async function handleContinueShift() {
@@ -238,6 +274,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     if (error) { setSettingsNotice(error.message); return }
     setPendingShift(null)
     setSettings((current) => ({ ...current, activeShiftStart: pendingShift.start }))
+    void queryClient.invalidateQueries({ queryKey: profileQueryKey })
   }
 
   async function handleSavePendingShift() {
@@ -262,24 +299,79 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     })
 
     if (error) { setSettingsNotice(error.message); return }
-    setEntries((currentEntries) => [nextEntry, ...currentEntries])
+    syncSavedEntry(nextEntry)
     setPendingShift(null)
+    invalidateEntryQueries()
   }
 
   function handleRequestDeleteEntry(entry: Entry) {
     setDeleteEntryTarget(entry)
   }
 
+  function invalidateEntryQueries() {
+    workclockQueryKeys.entryCollections(userId).forEach((queryKey) => {
+      void queryClient.invalidateQueries({ queryKey })
+    })
+  }
+
+  function sortEntriesByStart(nextEntries: Entry[]) {
+    return [...nextEntries].sort((left, right) => new Date(right.start).getTime() - new Date(left.start).getTime())
+  }
+
+  function upsertEntry(entriesToUpdate: Entry[], entry: Entry) {
+    const nextEntries = entriesToUpdate.some((currentEntry) => currentEntry.id === entry.id)
+      ? entriesToUpdate.map((currentEntry) => (currentEntry.id === entry.id ? entry : currentEntry))
+      : [entry, ...entriesToUpdate]
+
+    return sortEntriesByStart(nextEntries)
+  }
+
+  function updateCachedEntries(
+    queryKey: readonly unknown[],
+    updater: (currentEntries: Entry[]) => Entry[]
+  ) {
+    queryClient.setQueryData<Entry[]>(queryKey, (currentEntries) =>
+      currentEntries ? updater(currentEntries) : currentEntries
+    )
+  }
+
+  function syncSavedEntry(entry: Entry) {
+    updateCachedEntries(entriesQueryKey, (currentEntries) => upsertEntry(currentEntries, entry))
+    updateCachedEntries(dashboardEntriesQueryKey, (currentEntries) =>
+      isDateInCurrentWeek(new Date(entry.start), now)
+        ? upsertEntry(currentEntries, entry)
+        : currentEntries.filter((currentEntry) => currentEntry.id !== entry.id)
+    )
+    updateCachedEntries(dashboardRecentEntriesQueryKey, (currentEntries) =>
+      upsertEntry(currentEntries, entry).slice(0, 4)
+    )
+  }
+
+  function syncDeletedEntry(entryId: string) {
+    const removeEntry = (currentEntries: Entry[]) =>
+      currentEntries.filter((entry) => entry.id !== entryId)
+
+    updateCachedEntries(entriesQueryKey, removeEntry)
+    updateCachedEntries(dashboardEntriesQueryKey, removeEntry)
+    updateCachedEntries(dashboardRecentEntriesQueryKey, removeEntry)
+  }
+
   async function handleDeleteEntry(id: string) {
-    const previousEntries = entries
+    const previousEntries = queryClient.getQueryData<Entry[]>(entriesQueryKey)
+    const previousDashboardEntries = queryClient.getQueryData<Entry[]>(dashboardEntriesQueryKey)
+    const previousRecentEntries = queryClient.getQueryData<Entry[]>(dashboardRecentEntriesQueryKey)
     setIsDeletingEntry(true)
-    setEntries((currentEntries) => currentEntries.filter((entry) => entry.id !== id))
+    syncDeletedEntry(id)
 
     const { error } = await supabase.from('time_entries').delete().eq('id', id).eq('user_id', userId)
 
     if (error) {
-      setEntries(previousEntries)
+      queryClient.setQueryData(entriesQueryKey, previousEntries)
+      queryClient.setQueryData(dashboardEntriesQueryKey, previousDashboardEntries)
+      queryClient.setQueryData(dashboardRecentEntriesQueryKey, previousRecentEntries)
       setSettingsNotice(error.message)
+    } else {
+      invalidateEntryQueries()
     }
 
     setIsDeletingEntry(false)
@@ -355,12 +447,9 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
 
     if (error) { setManualError(error.message); return }
 
-    setEntries((currentEntries) =>
-      editingEntryId
-        ? currentEntries.map((entry) => (entry.id === editingEntryId ? nextEntry : entry))
-        : [nextEntry, ...currentEntries]
-    )
+    syncSavedEntry(nextEntry)
     setIsManualEntryOpen(false)
+    invalidateEntryQueries()
   }
 
   async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
@@ -384,6 +473,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     if (error) { setSettingsNotice(error.message); return }
 
     setSettingsNotice('Settings saved to Supabase.')
+    void queryClient.invalidateQueries({ queryKey: profileQueryKey })
     window.setTimeout(() => setSettingsNotice(null), 2500)
   }
 
@@ -427,25 +517,33 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="px-4 pb-4 pt-4 sm:px-6 lg:px-8">
+          <header className="px-4 pb-3 pt-4 sm:px-6 sm:pb-4 lg:px-8">
             <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-center justify-between gap-4 sm:block">
-                  <div className="sm:hidden">
-                    <Brand compact />
-                  </div>
-                  <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-slate-500 sm:mt-1">
+              <div className="lg:hidden">
+                <div className="flex items-start justify-between gap-4">
+                  <Brand compact />
+                  <p className="max-w-36 pt-0.5 text-right text-[0.68rem] font-bold uppercase leading-[1.45] tracking-[0.28em] text-slate-500">
                     {formatLongDate(now)}
                   </p>
                 </div>
 
-                <div className="flex-1 text-left sm:text-center">
-                  <h1 className="text-3xl font-extrabold tracking-[-0.05em] text-slate-900 sm:text-4xl">
+                <h1 className="mt-5 text-[1.85rem] font-extrabold leading-none tracking-[-0.06em] text-slate-900">
+                  {pageTitle}
+                </h1>
+              </div>
+
+              <div className="hidden lg:flex lg:items-start lg:justify-between lg:gap-4">
+                <p className="mt-1 text-[0.68rem] font-bold uppercase tracking-[0.24em] text-slate-500">
+                  {formatLongDate(now)}
+                </p>
+
+                <div className="flex-1 text-center">
+                  <h1 className="text-4xl font-extrabold tracking-[-0.05em] text-slate-900">
                     {pageTitle}
                   </h1>
                 </div>
 
-                <div className="hidden min-w-[220px] rounded-2xl bg-slate-50 px-4 py-3 text-right sm:block">
+                <div className="min-w-[220px] rounded-2xl bg-slate-50 px-4 py-3 text-right">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                     Account
                   </p>
@@ -484,6 +582,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
                 weeklyGoalProgress={weeklyGoalProgress}
                 onDeleteEntry={handleRequestDeleteEntry}
                 onEditEntry={handleEditEntry}
+                userId={userId}
               />
             ) : null}
 
@@ -500,11 +599,11 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
 
             {!isBusy && !isRouteLoading && currentView === 'reports' ? (
               <ReportsView
-                entries={sortedEntries}
                 hourlyRate={settings.hourlyRate}
                 weeklyGoalHours={settings.weeklyGoalHours}
                 overworksRate={settings.overworksRate}
                 workerName={settings.workerName}
+                userId={userId}
               />
             ) : null}
 

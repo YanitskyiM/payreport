@@ -10,8 +10,10 @@ import {
   StopCircleIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
+import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import {
   HOUR_MS,
   buildWeeklyChartData,
@@ -24,7 +26,9 @@ import {
   getEntryDurationMs,
   getStartOfWeek,
 } from '@/lib/workclock'
+import { workclockQueryKeys } from '@/lib/workclock-query-keys'
 import type { Entry, PendingShift, Settings } from '../types'
+import { createWeekRange, fetchEntriesInRange } from '../data'
 
 type DashboardViewProps = {
   activeShiftDurationMs: number
@@ -43,6 +47,7 @@ type DashboardViewProps = {
   weeklyGoalProgress: number
   onDeleteEntry: (entry: Entry) => void
   onEditEntry: (entry: Entry) => void
+  userId: string
 }
 
 export function DashboardView({
@@ -62,7 +67,9 @@ export function DashboardView({
   weeklyGoalProgress,
   onDeleteEntry,
   onEditEntry,
+  userId,
 }: DashboardViewProps) {
+  const supabase = useMemo(() => createClient(), [])
   const [weekOffset, setWeekOffset] = useState(0)
 
   const chartNow = useMemo(() => {
@@ -71,10 +78,21 @@ export function DashboardView({
     d.setDate(d.getDate() + weekOffset * 7)
     return d
   }, [now, weekOffset])
+  const chartWeekRange = useMemo(() => createWeekRange(chartNow), [chartNow])
+  const historicalWeekEntriesQuery = useQuery({
+    enabled: weekOffset !== 0,
+    queryKey: workclockQueryKeys.dashboardEntries(
+      userId,
+      chartWeekRange.startIso,
+      chartWeekRange.endExclusiveIso
+    ),
+    queryFn: () => fetchEntriesInRange(supabase, userId, chartWeekRange),
+  })
+  const chartEntries = weekOffset === 0 ? entries : historicalWeekEntriesQuery.data ?? []
 
   const weeklyBars = useMemo(
-    () => buildWeeklyChartData(entries, chartNow, weekOffset === 0 ? activeShiftDurationMs : 0),
-    [activeShiftDurationMs, chartNow, entries, weekOffset]
+    () => buildWeeklyChartData(chartEntries, chartNow, weekOffset === 0 ? activeShiftDurationMs : 0),
+    [activeShiftDurationMs, chartEntries, chartNow, weekOffset]
   )
 
   const weekLabel = useMemo(() => {
@@ -301,10 +319,13 @@ export function DashboardView({
             </div>
             <Link
               href="/dashboard/entries"
-              className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500 transition hover:bg-indigo-100 hover:text-indigo-600"
+              className="hidden items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500 transition hover:bg-indigo-100 hover:text-indigo-600 sm:inline-flex"
             >
               {recentEntries.length} items · View all
             </Link>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500 sm:hidden">
+              {recentEntries.length} items
+            </span>
           </div>
 
           <div className="mt-6 space-y-3">
@@ -315,10 +336,10 @@ export function DashboardView({
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-slate-900">
-                      {new Date(entry.start).toLocaleDateString('en-US', { weekday: 'long' })}
+                    {new Date(entry.start).toLocaleDateString('en-US', { weekday: 'long' })}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                  {formatEntryDate(new Date(entry.start))} • {formatTimeRange(entry)}
+                    {formatEntryDate(new Date(entry.start))} • {formatTimeRange(entry)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -352,6 +373,13 @@ export function DashboardView({
               </div>
             ))}
           </div>
+
+          <Link
+            href="/dashboard/entries"
+            className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-slate-100 px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500 transition hover:bg-indigo-100 hover:text-indigo-600 sm:hidden"
+          >
+            View all
+          </Link>
         </section>
       </div>
     </section>

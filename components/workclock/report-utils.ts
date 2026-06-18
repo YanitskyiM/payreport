@@ -1,5 +1,4 @@
 import { formatInputDate, formatLongDate, getStartOfWeek } from '@/lib/workclock'
-import type { Entry } from './types'
 
 export function addDays(date: Date, days: number): Date {
   const next = new Date(date)
@@ -53,12 +52,4 @@ export function formatReportRangeLabel(startDate: string, endDate: string): stri
   return `${formatLongDate(new Date(`${startDate}T12:00:00`))} – ${formatLongDate(
     new Date(`${endDate}T12:00:00`)
   )}`
-}
-
-export function filterEntriesByRange(entries: Entry[], startDate: string, endDate: string): Entry[] {
-  if (!startDate || !endDate || endDate < startDate) return []
-  return entries.filter((entry) => {
-    const entryDate = formatInputDate(new Date(entry.start))
-    return entryDate >= startDate && entryDate <= endDate
-  })
 }
