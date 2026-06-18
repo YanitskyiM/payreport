@@ -1,6 +1,6 @@
 'use client'
 
-import { useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarDaysIcon,
   ChevronLeftIcon,
@@ -9,12 +9,14 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { type FormEvent, useMemo, useState } from 'react'
 import { DeleteEntryModal } from '@/components/workclock/modals/DeleteEntryModal'
 import { ManualEntryModal } from '@/components/workclock/modals/ManualEntryModal'
-import type { Entry, EntryRow, ManualFormState } from '@/components/workclock/types'
-import { mapRowToEntry, toInputTime } from '@/components/workclock/utils'
+import type { Entry, ManualFormState } from '@/components/workclock/types'
+import { fetchEntriesPage } from '@/components/workclock/data'
+import { EntriesViewSkeleton } from '@/components/workclock/ui/DashboardSkeletons'
+import { toInputTime } from '@/components/workclock/utils'
 import { createClient } from '@/lib/supabase/client'
 import { workclockQueryKeys } from '@/lib/workclock-query-keys'
 import {
@@ -32,23 +34,33 @@ function formatDayOfWeek(date: Date) {
   return date.toLocaleDateString('en-US', { weekday: 'short' })
 }
 
+const PAGE_SIZE = 20
+const ENTRIES_STALE_TIME_MS = 60_000
+
 export function EntriesShell({
-  entries: rawEntries,
-  page,
-  totalPages,
-  totalCount,
   userId,
 }: {
-  entries: EntryRow[]
-  page: number
-  totalPages: number
-  totalCount: number
   userId: string
 }) {
-  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
-  const entries = useMemo(() => rawEntries.map(mapRowToEntry), [rawEntries])
+  const searchParams = useSearchParams()
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1)
+  const entriesPageQueryKey = useMemo(
+    () => workclockQueryKeys.entriesPage(userId, page, PAGE_SIZE),
+    [page, userId]
+  )
+  const entriesPageQuery = useQuery({
+    placeholderData: keepPreviousData,
+    queryKey: entriesPageQueryKey,
+    queryFn: () => fetchEntriesPage(supabase, userId, page, PAGE_SIZE),
+    staleTime: ENTRIES_STALE_TIME_MS,
+  })
+  const entriesPage = entriesPageQuery.data
+  const entries = entriesPage?.entries ?? []
+  const safePage = entriesPage?.page ?? page
+  const totalCount = entriesPage?.totalCount ?? 0
+  const totalPages = entriesPage?.totalPages ?? 1
 
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
@@ -63,6 +75,18 @@ export function EntriesShell({
     workclockQueryKeys.entryCollections(userId).forEach((queryKey) => {
       void queryClient.invalidateQueries({ queryKey })
     })
+  }
+
+  if (entriesPageQuery.isLoading) {
+    return <EntriesViewSkeleton />
+  }
+
+  if (entriesPageQuery.error instanceof Error) {
+    return (
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+        Failed to load entries: {entriesPageQuery.error.message}
+      </div>
+    )
   }
 
   function handleOpenAddEntry() {
@@ -139,7 +163,6 @@ export function EntriesShell({
 
     setIsManualEntryOpen(false)
     invalidateEntryQueries()
-    router.refresh()
   }
 
   async function handleDeleteEntry(id: string) {
@@ -154,7 +177,6 @@ export function EntriesShell({
     if (!error) {
       setDeleteTarget(null)
       invalidateEntryQueries()
-      router.refresh()
     }
   }
 
@@ -168,7 +190,7 @@ export function EntriesShell({
           </h2>
           {totalCount > 0 && (
             <p className="mt-1 text-xs text-slate-400">
-              {totalCount} total · page {page} of {totalPages}
+              {totalCount} total · page {safePage} of {totalPages}
             </p>
           )}
         </div>
@@ -309,16 +331,16 @@ export function EntriesShell({
       {totalPages > 1 && (
         <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
           <Link
-            href={`/dashboard/entries?page=${page - 1}`}
-            aria-disabled={page <= 1}
-            className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition hover:bg-slate-50 ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+            href={`/dashboard/entries?page=${safePage - 1}`}
+            aria-disabled={safePage <= 1}
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition hover:bg-slate-50 ${safePage <= 1 ? 'pointer-events-none opacity-40' : ''}`}
           >
             <ChevronLeftIcon className="h-4 w-4" />
           </Link>
 
           <div className="flex items-center gap-1">
             {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+              .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
               .reduce<(number | '...')[]>((acc, p, idx, arr) => {
                 if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('...')
                 acc.push(p)
@@ -334,7 +356,7 @@ export function EntriesShell({
                     key={item}
                     href={`/dashboard/entries?page=${item}`}
                     className={`inline-flex h-9 w-9 items-center justify-center rounded-xl text-sm font-semibold transition ${
-                      item === page
+                      item === safePage
                         ? 'bg-indigo-600 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
@@ -346,9 +368,9 @@ export function EntriesShell({
           </div>
 
           <Link
-            href={`/dashboard/entries?page=${page + 1}`}
-            aria-disabled={page >= totalPages}
-            className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition hover:bg-slate-50 ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+            href={`/dashboard/entries?page=${safePage + 1}`}
+            aria-disabled={safePage >= totalPages}
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition hover:bg-slate-50 ${safePage >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
           >
             <ChevronRightIcon className="h-4 w-4" />
           </Link>

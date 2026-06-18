@@ -12,6 +12,13 @@ export type EntryRange = {
   startIso: string
 }
 
+export type EntriesPage = {
+  entries: Entry[]
+  page: number
+  totalCount: number
+  totalPages: number
+}
+
 export function createWeekRange(date: Date): EntryRange {
   const start = getStartOfWeek(date)
   const endExclusive = new Date(start)
@@ -47,6 +54,35 @@ export async function fetchEntries(
   if (error) throw error
 
   return (data ?? []).map(mapRowToEntry)
+}
+
+export async function fetchEntriesPage(
+  supabase: SupabaseBrowserClient,
+  userId: string,
+  page: number,
+  pageSize: number
+): Promise<EntriesPage> {
+  const safePage = Math.max(1, page)
+  const from = (safePage - 1) * pageSize
+  const to = from + pageSize - 1
+  const { data, count, error } = await supabase
+    .from('time_entries')
+    .select(TIME_ENTRY_COLUMNS, { count: 'exact' })
+    .eq('user_id', userId)
+    .order('start_at', { ascending: false })
+    .range(from, to)
+
+  if (error) throw error
+
+  const totalCount = count ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+
+  return {
+    entries: (data ?? []).map(mapRowToEntry),
+    page: Math.min(safePage, totalPages),
+    totalCount,
+    totalPages,
+  }
 }
 
 export async function fetchEntriesInRange(

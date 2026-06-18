@@ -24,19 +24,19 @@ import {
 import type { Entry, ManualFormState, PayReportAppProps, PendingShift, ProfileRow } from './workclock/types'
 import { NAV_ITEMS } from './workclock/constants'
 import { mapProfileToSettings, toInputTime } from './workclock/utils'
-import { createWeekRange, fetchEntries, fetchEntriesInRange, fetchRecentEntries } from './workclock/data'
+import { createWeekRange, fetchEntriesInRange, fetchRecentEntries } from './workclock/data'
 import { Brand } from './workclock/ui/Brand'
 import { SidebarNavItem } from './workclock/ui/SidebarNavItem'
 import { MobileNavItem } from './workclock/ui/MobileNavItem'
 import { DashboardContentSkeleton } from './workclock/ui/DashboardSkeletons'
 import { DashboardView } from './workclock/views/DashboardView'
-import { EntriesView } from './workclock/views/EntriesView'
+import { EntriesShell } from './workclock/views/EntriesShell'
 import { ReportsView } from './workclock/views/ReportsView'
 import { SettingsView } from './workclock/views/SettingsView'
 import { ManualEntryModal } from './workclock/modals/ManualEntryModal'
 import { DeleteEntryModal } from './workclock/modals/DeleteEntryModal'
 
-export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppProps) {
+export function PayReportApp({ userEmail, userId }: PayReportAppProps) {
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
   const pathname = usePathname()
@@ -56,7 +56,6 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     createDefaultManualForm(new Date())
   )
   const currentView = getViewFromPathname(pathname)
-  const usesClientEntriesView = currentView === 'entries' && !entriesSlot
   const isOverlayOpen = isManualEntryOpen || deleteEntryTarget !== null
   const entriesQueryKey = useMemo(() => workclockQueryKeys.entries(userId), [userId])
   const profileQueryKey = useMemo(() => workclockQueryKeys.profile(userId), [userId])
@@ -73,11 +72,6 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     queryKey: profileQueryKey,
     queryFn: fetchOrCreateProfile,
   })
-  const entriesQuery = useQuery({
-    enabled: usesClientEntriesView,
-    queryKey: entriesQueryKey,
-    queryFn: () => fetchEntries(supabase, userId),
-  })
   const dashboardEntriesQuery = useQuery({
     enabled: currentView === 'dashboard',
     queryKey: dashboardEntriesQueryKey,
@@ -88,25 +82,17 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
     queryKey: dashboardRecentEntriesQueryKey,
     queryFn: () => fetchRecentEntries(supabase, userId),
   })
-  const entries =
-    currentView === 'dashboard'
-      ? dashboardEntriesQuery.data ?? []
-      : usesClientEntriesView
-        ? entriesQuery.data ?? []
-        : []
+  const entries = currentView === 'dashboard' ? dashboardEntriesQuery.data ?? [] : []
   const loadError =
     profileQuery.error instanceof Error
       ? profileQuery.error.message
-      : usesClientEntriesView && entriesQuery.error instanceof Error
-        ? entriesQuery.error.message
-        : currentView === 'dashboard' && dashboardEntriesQuery.error instanceof Error
+      : currentView === 'dashboard' && dashboardEntriesQuery.error instanceof Error
           ? dashboardEntriesQuery.error.message
           : currentView === 'dashboard' && dashboardRecentEntriesQuery.error instanceof Error
             ? dashboardRecentEntriesQuery.error.message
         : null
   const isBusy =
     profileQuery.isLoading ||
-    (usesClientEntriesView && entriesQuery.isLoading) ||
     (currentView === 'dashboard' &&
       (dashboardEntriesQuery.isLoading || dashboardRecentEntriesQuery.isLoading))
 
@@ -199,11 +185,21 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
   const activeView = isRouteLoading && pendingView ? pendingView : currentView
   const pageTitle = getPageTitle(activeView)
 
+  function hasCachedEntriesPage() {
+    return queryClient
+      .getQueriesData({ queryKey: workclockQueryKeys.entriesPagesPrefix(userId) })
+      .some(([, data]) => Boolean(data))
+  }
+
   function handleNavigationStart(href: string) {
     if (href !== pathname) {
-      setPendingView(getViewFromPathname(href))
+      const nextView = getViewFromPathname(href)
+      setPendingView(nextView)
       if (routeLoadingTimeoutRef.current !== null) {
         window.clearTimeout(routeLoadingTimeoutRef.current)
+      }
+      if (nextView === 'entries' && hasCachedEntriesPage()) {
+        return
       }
       routeLoadingTimeoutRef.current = window.setTimeout(() => {
         setIsRouteLoading(true)
@@ -587,14 +583,7 @@ export function PayReportApp({ userEmail, userId, entriesSlot }: PayReportAppPro
             ) : null}
 
             {!isBusy && !isRouteLoading && currentView === 'entries' ? (
-              entriesSlot ?? (
-                <EntriesView
-                  entries={sortedEntries}
-                  onAddManualEntry={handleOpenNewManualEntry}
-                  onDeleteEntry={handleRequestDeleteEntry}
-                  onEditEntry={handleEditEntry}
-                />
-              )
+              <EntriesShell userId={userId} />
             ) : null}
 
             {!isBusy && !isRouteLoading && currentView === 'reports' ? (

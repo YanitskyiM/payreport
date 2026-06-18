@@ -1,13 +1,8 @@
-import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { PayReportApp } from '@/components/workclock-app'
 import { createClient } from '@/lib/supabase/server'
 
-export default async function DashboardLayout({
-  children
-}: Readonly<{
-  children: ReactNode
-}>) {
+export default async function DashboardLayout() {
   const supabase = await createClient()
   const { data } = await supabase.auth.getClaims()
   const claims = data?.claims
@@ -20,7 +15,6 @@ export default async function DashboardLayout({
     <PayReportApp
       userEmail={typeof claims.email === 'string' ? claims.email : ''}
       userId={claims.sub}
-      entriesSlot={children}
     />
   )
 }

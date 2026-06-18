@@ -28,7 +28,6 @@ export type EntryRow = {
 export type PayReportAppProps = {
   userEmail: string
   userId: string
-  entriesSlot?: ReactNode
 }
 
 export type PendingShift = {

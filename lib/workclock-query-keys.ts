@@ -4,9 +4,13 @@ export const workclockQueryKeys = {
   dashboardEntriesPrefix: (userId: string) => ['workclock', 'dashboard-entries', userId] as const,
   dashboardRecentEntries: (userId: string) => ['workclock', 'dashboard-recent-entries', userId] as const,
   entries: (userId: string) => ['workclock', 'entries', userId] as const,
+  entriesPage: (userId: string, page: number, pageSize: number) =>
+    ['workclock', 'entries-page', userId, page, pageSize] as const,
+  entriesPagesPrefix: (userId: string) => ['workclock', 'entries-page', userId] as const,
   entryCollections: (userId: string) =>
     [
       workclockQueryKeys.entries(userId),
+      workclockQueryKeys.entriesPagesPrefix(userId),
       workclockQueryKeys.dashboardEntriesPrefix(userId),
       workclockQueryKeys.dashboardRecentEntries(userId),
       workclockQueryKeys.reportEntriesPrefix(userId),
