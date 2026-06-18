@@ -35,7 +35,6 @@ function formatDayOfWeek(date: Date) {
 }
 
 const PAGE_SIZE = 20
-const ENTRIES_STALE_TIME_MS = 60_000
 
 export function EntriesShell({
   userId,
@@ -54,7 +53,6 @@ export function EntriesShell({
     placeholderData: keepPreviousData,
     queryKey: entriesPageQueryKey,
     queryFn: () => fetchEntriesPage(supabase, userId, page, PAGE_SIZE),
-    staleTime: ENTRIES_STALE_TIME_MS,
   })
   const entriesPage = entriesPageQuery.data
   const entries = entriesPage?.entries ?? []
