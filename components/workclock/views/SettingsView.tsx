@@ -8,7 +8,6 @@ import { Field } from '../ui/Field'
 import { SettingsMetric } from '../ui/SettingsMetric'
 import { inputClassName } from '../constants'
 import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
-import { PushNotificationPanel } from '../ui/PushNotificationPanel'
 import { ScheduledNotificationsPanel } from '../ui/ScheduledNotificationsPanel'
 
 type SettingsViewProps = {
@@ -127,17 +126,6 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
               Sign Out
             </button>
           </form>
-        </div>
-      </section>
-
-      {/* Push notifications — full width below the two-column section */}
-      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-2">
-        <p className="text-sm font-semibold text-slate-500">Push Notifications</p>
-        <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
-          Device subscriptions &amp; test
-        </h2>
-        <div className="mt-6">
-          <PushNotificationPanel />
         </div>
       </section>
 
