@@ -9,6 +9,7 @@ import { SettingsMetric } from '../ui/SettingsMetric'
 import { inputClassName } from '../constants'
 import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
 import { PushNotificationPanel } from '../ui/PushNotificationPanel'
+import { ScheduledNotificationsPanel } from '../ui/ScheduledNotificationsPanel'
 
 type SettingsViewProps = {
   notice: string | null
@@ -137,6 +138,17 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
         </h2>
         <div className="mt-6">
           <PushNotificationPanel />
+        </div>
+      </section>
+
+      {/* Scheduled reminders — full width */}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-2">
+        <p className="text-sm font-semibold text-slate-500">Scheduled Reminders</p>
+        <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
+          Automatic notifications
+        </h2>
+        <div className="mt-6">
+          <ScheduledNotificationsPanel />
         </div>
       </section>
 
