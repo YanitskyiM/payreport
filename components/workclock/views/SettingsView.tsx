@@ -8,6 +8,7 @@ import { Field } from '../ui/Field'
 import { SettingsMetric } from '../ui/SettingsMetric'
 import { inputClassName } from '../constants'
 import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
+import { PushNotificationCard } from '../ui/PushNotificationCard'
 import { ScheduledNotificationsPanel } from '../ui/ScheduledNotificationsPanel'
 
 type SettingsViewProps = {
@@ -135,7 +136,8 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
         <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
           Automatic notifications
         </h2>
-        <div className="mt-6">
+        <div className="mt-6 space-y-4">
+          <PushNotificationCard />
           <ScheduledNotificationsPanel />
         </div>
       </section>
