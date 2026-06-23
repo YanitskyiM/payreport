@@ -25,10 +25,12 @@ type UsePushNotificationsReturn = {
   isPending: boolean
   /** Error message from the last operation */
   error: string | null
+  /** Re-read browser permission and current push subscription */
+  refresh: () => Promise<void>
   /** Enable push notifications — triggers the permission prompt then subscribes */
   enable: () => Promise<void>
   /** Disable push notifications for this device */
-  disable: () => Promise<void>
+  disable: () => Promise<boolean>
 }
 
 export function usePushNotifications(): UsePushNotificationsReturn {
@@ -39,7 +41,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     const supported =
       typeof window !== 'undefined' &&
       'Notification' in window &&
@@ -47,18 +49,57 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       'PushManager' in window
 
     setIsSupported(supported)
-    setIsStandalone(isStandalonePWA())
+    const standalone = isStandalonePWA()
+    setIsStandalone(standalone)
 
-    if (supported) {
-      setPermission(getNotificationPermission())
+    if (!supported) {
+      setPermission('unsupported')
+      setIsSubscribed(false)
+      return
+    }
 
-      // Check if already subscribed on this device
-      getServiceWorkerRegistration().then((reg) => {
-        if (!reg) return
-        reg.pushManager.getSubscription().then((sub) => {
-          setIsSubscribed(Boolean(sub))
-        })
-      })
+    const nextPermission = getNotificationPermission()
+    setPermission(nextPermission)
+
+    if (nextPermission !== 'granted') {
+      setIsSubscribed(false)
+      return
+    }
+
+    const reg = await getServiceWorkerRegistration()
+    if (!reg) {
+      setIsSubscribed(false)
+      return
+    }
+
+    const sub = await reg.pushManager.getSubscription()
+    setIsSubscribed(Boolean(sub))
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void refresh()
+      }
+    }
+
+    window.addEventListener('focus', refresh)
+    window.addEventListener('pageshow', refresh)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('pageshow', refresh)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [refresh])
+
+  const disableReminderSettings = useCallback(async () => {
+    const response = await fetch('/api/push/reminders/disable', { method: 'POST' })
+    if (!response.ok) {
+      throw new Error('Failed to disable reminder settings')
     }
   }, [])
 
@@ -105,7 +146,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     }
   }, [])
 
-  const disable = useCallback(async () => {
+  const disable = useCallback(async (): Promise<boolean> => {
     setError(null)
     setIsPending(true)
     try {
@@ -122,14 +163,17 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         })
       }
 
+      await disableReminderSettings()
       setIsSubscribed(false)
+      return true
     } catch (err) {
       console.error('[usePushNotifications] disable error:', err)
-      setError('Failed to disable notifications. Please try again.')
+      setError('Failed to fully disable notifications. Please try again.')
+      return false
     } finally {
       setIsPending(false)
     }
-  }, [])
+  }, [disableReminderSettings])
 
   return {
     isSupported,
@@ -138,8 +182,8 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     isSubscribed,
     isPending,
     error,
+    refresh,
     enable,
     disable,
   }
 }
-

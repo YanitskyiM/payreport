@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Dispatch, FormEvent, SetStateAction } from 'react'
 import { formatCurrency } from '@/lib/workclock'
 import type { Settings } from '../types'
@@ -10,6 +10,7 @@ import { inputClassName } from '../constants'
 import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
 import { PushNotificationCard } from '../ui/PushNotificationCard'
 import { ScheduledNotificationsPanel } from '../ui/ScheduledNotificationsPanel'
+import { usePushNotifications } from '@/hooks/usePushNotifications'
 
 type SettingsViewProps = {
   notice: string | null
@@ -21,7 +22,43 @@ type SettingsViewProps = {
 
 export function SettingsView({ notice, onSave, settings, setSettings, userEmail }: SettingsViewProps) {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
+  const [remindersSyncKey, setRemindersSyncKey] = useState(0)
   const logoutFormRef = useRef<HTMLFormElement>(null)
+  const pushNotifications = usePushNotifications()
+  const pushEnabled =
+    pushNotifications.isStandalone &&
+    pushNotifications.isSupported &&
+    pushNotifications.permission === 'granted' &&
+    pushNotifications.isSubscribed
+
+  useEffect(() => {
+    if (
+      !pushNotifications.isStandalone ||
+      !pushNotifications.isSupported ||
+      pushNotifications.permission !== 'denied'
+    ) {
+      return
+    }
+
+    let cancelled = false
+
+    async function disableRemindersBlockedByDeviceSettings() {
+      const response = await fetch('/api/push/reminders/disable', { method: 'POST' })
+      if (response.ok && !cancelled) {
+        setRemindersSyncKey((current) => current + 1)
+      }
+    }
+
+    void disableRemindersBlockedByDeviceSettings()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    pushNotifications.isStandalone,
+    pushNotifications.isSupported,
+    pushNotifications.permission,
+  ])
 
   function handleLogoutConfirm() {
     logoutFormRef.current?.submit()
@@ -137,8 +174,8 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
           Automatic notifications
         </h2>
         <div className="mt-6 space-y-4">
-          <PushNotificationCard />
-          <ScheduledNotificationsPanel />
+          <PushNotificationCard pushNotifications={pushNotifications} />
+          <ScheduledNotificationsPanel pushEnabled={pushEnabled} syncKey={remindersSyncKey} />
         </div>
       </section>
 

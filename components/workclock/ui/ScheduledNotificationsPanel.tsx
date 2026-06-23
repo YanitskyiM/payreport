@@ -20,6 +20,11 @@ const DEFAULT: ReminderSettings = {
   timezone: 'UTC',
 }
 
+type ScheduledNotificationsPanelProps = {
+  pushEnabled: boolean
+  syncKey: number
+}
+
 function Toggle({
   checked,
   onChange,
@@ -49,7 +54,7 @@ function Toggle({
   )
 }
 
-export function ScheduledNotificationsPanel() {
+export function ScheduledNotificationsPanel({ pushEnabled, syncKey }: ScheduledNotificationsPanelProps) {
   const [settings, setSettings] = useState<ReminderSettings>(DEFAULT)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -80,7 +85,7 @@ export function ScheduledNotificationsPanel() {
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, pushEnabled, syncKey])
 
   async function handleSave() {
     setSaving(true)
@@ -120,6 +125,8 @@ export function ScheduledNotificationsPanel() {
   }
 
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  if (!pushEnabled) return null
 
   return (
     <div className="space-y-4">

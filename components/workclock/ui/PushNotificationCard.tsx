@@ -1,11 +1,17 @@
 'use client'
 
 import { BellIcon, BellSlashIcon, DevicePhoneMobileIcon } from '@heroicons/react/24/outline'
-import { usePushNotifications } from '@/hooks/usePushNotifications'
+import type { usePushNotifications } from '@/hooks/usePushNotifications'
 
-export function PushNotificationCard() {
+type PushNotificationsState = ReturnType<typeof usePushNotifications>
+
+type PushNotificationCardProps = {
+  pushNotifications: PushNotificationsState
+}
+
+export function PushNotificationCard({ pushNotifications }: PushNotificationCardProps) {
   const { isSupported, isStandalone, permission, isSubscribed, isPending, error, enable, disable } =
-    usePushNotifications()
+    pushNotifications
 
   // Not installed as PWA — show install prompt (iOS requires Home Screen install)
   if (!isStandalone) {
