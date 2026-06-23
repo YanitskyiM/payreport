@@ -124,7 +124,7 @@ export function ScheduledNotificationsPanel() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-400">
-        Notifications fire only when <strong>no active shift</strong> is running. Timezone:{' '}
+        Reminders respect your local timezone:{' '}
         <span className="font-semibold text-slate-600">{tz}</span>
       </p>
 
@@ -174,9 +174,9 @@ export function ScheduledNotificationsPanel() {
               <BellIcon className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-800">Log-time reminder</p>
+              <p className="text-sm font-semibold text-slate-800">Clock-out reminder</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                &ldquo;Don&rsquo;t forget to log your hours!&rdquo; — fires if no active session at
+                &ldquo;Still clocked in!&rdquo; — fires if a shift is <strong>still running</strong> at
                 this time.
               </p>
             </div>

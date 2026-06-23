@@ -150,14 +150,14 @@ export async function GET(request: Request) {
       // ── Clock-out / log-time reminder ────────────────────────────────────────
       if (
         profile.clock_out_reminder_enabled &&
-        !hasActiveShift &&
+        hasActiveShift && // fires when shift IS still running past this time
         profile.clock_out_notified_date !== dateStr &&
         isInWindow(hours, minutes, profile.clock_out_reminder_time)
       ) {
         for (const sub of subs) {
           const result = await sendPushNotification(sub, {
-            title: '📋 Log your time!',
-            body: "End of day — don't forget to record your hours.",
+            title: '⏰ Still clocked in!',
+            body: "Your shift is still running — don't forget to clock out.",
             url: '/dashboard',
             tag: 'clock-out-reminder',
           })
