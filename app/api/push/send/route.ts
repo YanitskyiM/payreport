@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendPushNotification, type PushPayload } from '@/lib/pwa/send-push'
 
+export const runtime = 'nodejs'
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -60,4 +62,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-
