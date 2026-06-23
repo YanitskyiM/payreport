@@ -8,6 +8,7 @@ import { Field } from '../ui/Field'
 import { SettingsMetric } from '../ui/SettingsMetric'
 import { inputClassName } from '../constants'
 import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
+import { PushNotificationCard } from '../ui/PushNotificationCard'
 
 type SettingsViewProps = {
   notice: string | null
@@ -112,6 +113,13 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
           <SettingsMetric label="Weekly goal" value={`${settings.weeklyGoalHours.toFixed(1)} hours`} />
           <SettingsMetric label="Overworks rate" value={`${settings.overworksRate.toFixed(2)}×`} />
           <SettingsMetric label="Storage" value="Supabase cloud database" />
+        </div>
+
+        <div className="mt-6 rounded-3xl bg-slate-50 p-4">
+          <p className="text-sm font-semibold text-slate-500">Notifications</p>
+          <div className="mt-3">
+            <PushNotificationCard />
+          </div>
         </div>
 
         <div className="mt-6 rounded-3xl bg-slate-50 p-4">
