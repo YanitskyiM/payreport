@@ -74,47 +74,50 @@ export async function GET(request: Request) {
   try {
     const supabase = createServiceClient()
 
-    // Fetch all users with at least one enabled reminder that also have push subscriptions.
-    // Falls back gracefully if reminder columns don't exist yet (migration not run).
-    const { data: rows, error } = await supabase
+    // 1. Fetch profiles that have at least one reminder enabled
+    const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
       .select(
-        `
-        user_id,
-        timezone,
-        active_shift_start,
-        clock_in_reminder_enabled,
-        clock_in_reminder_time,
-        clock_in_notified_date,
-        clock_out_reminder_enabled,
-        clock_out_reminder_time,
-        clock_out_notified_date,
-        push_subscriptions ( id, endpoint, keys_p256dh, keys_auth )
-      `
+        'user_id, timezone, active_shift_start, clock_in_reminder_enabled, clock_in_reminder_time, clock_in_notified_date, clock_out_reminder_enabled, clock_out_reminder_time, clock_out_notified_date'
       )
       .or('clock_in_reminder_enabled.eq.true,clock_out_reminder_enabled.eq.true')
 
-    if (error) {
-      console.error('[Push Cron] DB error:', error)
-      // If reminder columns don't exist (migration not run), return helpful message
+    if (profilesError) {
       return NextResponse.json(
-        { error: error.message, hint: 'Have you run the reminder_settings_migration.sql?' },
+        { error: profilesError.message, hint: 'Have you run the reminder_settings_migration.sql?' },
         { status: 500 }
       )
+    }
+
+    if (!profiles || profiles.length === 0) {
+      return NextResponse.json({ ok: true, clockInSent: 0, clockOutSent: 0, stale: 0 })
+    }
+
+    // 2. Fetch all push subscriptions for those users in one query
+    const userIds = profiles.map((p) => p.user_id)
+    const { data: allSubs, error: subsError } = await supabase
+      .from('push_subscriptions')
+      .select('id, user_id, endpoint, keys_p256dh, keys_auth')
+      .in('user_id', userIds)
+
+    if (subsError) {
+      return NextResponse.json({ error: subsError.message }, { status: 500 })
+    }
+
+    // Group subscriptions by user_id for fast lookup
+    const subsByUser = new Map<string, typeof allSubs>()
+    for (const sub of allSubs ?? []) {
+      const list = subsByUser.get(sub.user_id) ?? []
+      list.push(sub)
+      subsByUser.set(sub.user_id, list)
     }
 
     let clockInSent = 0
     let clockOutSent = 0
     const staleIds: string[] = []
 
-    for (const profile of rows ?? []) {
-      const subs = (profile.push_subscriptions as {
-        id: string
-        endpoint: string
-        keys_p256dh: string
-        keys_auth: string
-      }[]) ?? []
-
+    for (const profile of profiles) {
+      const subs = subsByUser.get(profile.user_id) ?? []
       if (subs.length === 0) continue
 
       const tz = profile.timezone ?? 'UTC'
