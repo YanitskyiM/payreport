@@ -8,7 +8,7 @@ import { Field } from '../ui/Field'
 import { SettingsMetric } from '../ui/SettingsMetric'
 import { inputClassName } from '../constants'
 import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
-import { PushNotificationCard } from '../ui/PushNotificationCard'
+import { PushNotificationPanel } from '../ui/PushNotificationPanel'
 
 type SettingsViewProps = {
   notice: string | null
@@ -116,13 +116,6 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
         </div>
 
         <div className="mt-6 rounded-3xl bg-slate-50 p-4">
-          <p className="text-sm font-semibold text-slate-500">Notifications</p>
-          <div className="mt-3">
-            <PushNotificationCard />
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-3xl bg-slate-50 p-4">
           <p className="text-sm font-semibold text-slate-500">Session</p>
           <form ref={logoutFormRef} action="/auth/signout" method="post" className="mt-3">
             <button
@@ -133,6 +126,17 @@ export function SettingsView({ notice, onSave, settings, setSettings, userEmail 
               Sign Out
             </button>
           </form>
+        </div>
+      </section>
+
+      {/* Push notifications — full width below the two-column section */}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-2">
+        <p className="text-sm font-semibold text-slate-500">Push Notifications</p>
+        <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-900">
+          Device subscriptions &amp; test
+        </h2>
+        <div className="mt-6">
+          <PushNotificationPanel />
         </div>
       </section>
 

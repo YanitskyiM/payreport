@@ -18,15 +18,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid subscription payload' }, { status: 400 })
     }
 
-    const { error } = await supabase.from('push_subscriptions').upsert(
-      {
-        user_id: userId,
-        endpoint: body.endpoint,
-        keys_p256dh: body.keys.p256dh,
-        keys_auth: body.keys.auth,
-      },
-      { onConflict: 'user_id,endpoint' }
-    )
+    // Delete stale row for this device first (avoids needing UPDATE RLS policy)
+    await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', userId)
+      .eq('endpoint', body.endpoint)
+
+    const { error } = await supabase.from('push_subscriptions').insert({
+      user_id: userId,
+      endpoint: body.endpoint,
+      keys_p256dh: body.keys.p256dh,
+      keys_auth: body.keys.auth,
+    })
 
     if (error) {
       console.error('[Push Subscribe] DB error:', error)
@@ -39,4 +43,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-
