@@ -5,6 +5,7 @@
   "description": "PayReport dashboard Next.js with Supabase auth and storage",
   "scripts": {
     "dev": "next dev",
+    "generate:pwa-assets": "pwa-assets-generator",
     "build": "next build",
     "start": "next start"
   },
@@ -21,6 +22,7 @@
     "@types/node": "^22.15.30",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vite-pwa/assets-generator": "^1.0.2",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.7",
