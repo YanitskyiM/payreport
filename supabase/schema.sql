@@ -89,6 +89,22 @@ using (auth.uid() = user_id);
 alter table public.profiles
   add column if not exists overworks_rate double precision not null default 1.5;
 
+-- Reminder / notification settings (added after initial schema)
+alter table public.profiles
+  add column if not exists timezone text not null default 'UTC';
+alter table public.profiles
+  add column if not exists clock_in_reminder_enabled boolean not null default false;
+alter table public.profiles
+  add column if not exists clock_in_reminder_time text not null default '09:00';
+alter table public.profiles
+  add column if not exists clock_out_reminder_enabled boolean not null default false;
+alter table public.profiles
+  add column if not exists clock_out_reminder_time text not null default '18:00';
+alter table public.profiles
+  add column if not exists clock_in_notified_date text;
+alter table public.profiles
+  add column if not exists clock_out_notified_date text;
+
 -- Push notification subscriptions (one row per device per user)
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),

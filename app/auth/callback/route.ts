@@ -5,8 +5,11 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const tokenHash = searchParams.get('token_hash')
-  const next = searchParams.get('next') ?? '/dashboard'
   const type = searchParams.get('type') as EmailOtpType | null
+
+  // Only allow relative paths to prevent open-redirect attacks
+  const rawNext = searchParams.get('next') ?? '/dashboard'
+  const next = rawNext.startsWith('/') ? rawNext : '/dashboard'
 
   if (tokenHash && type) {
     const supabase = await createClient()

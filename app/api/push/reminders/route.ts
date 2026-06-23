@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
 export async function GET() {
   const supabase = await createClient()
   const { data } = await supabase.auth.getClaims()
@@ -15,7 +17,10 @@ export async function GET() {
     .eq('user_id', userId)
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[Push Reminders GET] DB error:', error.message)
+    return NextResponse.json({ error: 'Failed to load reminder settings' }, { status: 500 })
+  }
   return NextResponse.json({ reminders: profile })
 }
 
@@ -33,18 +38,31 @@ export async function PUT(request: Request) {
     timezone?: string
   } = await request.json()
 
+  const clockInTime = body.clockInTime ?? '09:00'
+  const clockOutTime = body.clockOutTime ?? '18:00'
+
+  if (!TIME_RE.test(clockInTime)) {
+    return NextResponse.json({ error: 'Invalid clockInTime format — expected HH:MM' }, { status: 400 })
+  }
+  if (!TIME_RE.test(clockOutTime)) {
+    return NextResponse.json({ error: 'Invalid clockOutTime format — expected HH:MM' }, { status: 400 })
+  }
+
   const { error } = await supabase
     .from('profiles')
     .update({
       clock_in_reminder_enabled: body.clockInEnabled ?? false,
-      clock_in_reminder_time: body.clockInTime ?? '09:00',
+      clock_in_reminder_time: clockInTime,
       clock_out_reminder_enabled: body.clockOutEnabled ?? false,
-      clock_out_reminder_time: body.clockOutTime ?? '18:00',
+      clock_out_reminder_time: clockOutTime,
       timezone: body.timezone ?? 'UTC',
     })
     .eq('user_id', userId)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[Push Reminders PUT] DB error:', error.message)
+    return NextResponse.json({ error: 'Failed to save reminder settings' }, { status: 500 })
+  }
   return NextResponse.json({ ok: true })
 }
 

@@ -56,10 +56,14 @@ function isInWindow(
 // ── Route ──────────────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
-  // Verify cron secret to prevent unauthorized calls
-  const authHeader = request.headers.get('authorization')
+  // Verify cron secret — CRON_SECRET is required; reject all calls if it is not configured
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error('[Push Cron] CRON_SECRET env var is not set — refusing to run')
+    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 })
+  }
+  const authHeader = request.headers.get('authorization')
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -101,7 +105,8 @@ export async function GET(request: Request) {
       .in('user_id', userIds)
 
     if (subsError) {
-      return NextResponse.json({ error: subsError.message }, { status: 500 })
+      console.error('[Push Cron] Subscriptions fetch error:', subsError.message)
+      return NextResponse.json({ error: 'Failed to fetch subscriptions' }, { status: 500 })
     }
 
     // Group subscriptions by user_id for fast lookup
@@ -116,60 +121,67 @@ export async function GET(request: Request) {
     let clockOutSent = 0
     const staleIds: string[] = []
 
-    for (const profile of profiles) {
-      const subs = subsByUser.get(profile.user_id) ?? []
-      if (subs.length === 0) continue
+    // Process all profiles concurrently — each profile's sends are parallelised too
+    await Promise.all(
+      profiles.map(async (profile) => {
+        const subs = subsByUser.get(profile.user_id) ?? []
+        if (subs.length === 0) return
 
-      const tz = profile.timezone ?? 'UTC'
-      const { hours, minutes, dateStr } = getLocalDateTime(tz)
-      const hasActiveShift = Boolean(profile.active_shift_start)
+        const tz = profile.timezone ?? 'UTC'
+        const { hours, minutes, dateStr } = getLocalDateTime(tz)
+        const hasActiveShift = Boolean(profile.active_shift_start)
 
-      // ── Clock-in reminder ────────────────────────────────────────────────────
-      if (
-        profile.clock_in_reminder_enabled &&
-        !hasActiveShift &&
-        profile.clock_in_notified_date !== dateStr &&
-        isInWindow(hours, minutes, profile.clock_in_reminder_time)
-      ) {
-        for (const sub of subs) {
-          const result = await sendPushNotification(sub, {
-            title: '⏰ Time to clock in!',
-            body: "Don't forget to start your shift for today.",
-            url: '/dashboard',
-            tag: 'clock-in-reminder',
-          })
-          if (result.success) clockInSent++
-          else if (result.stale) staleIds.push(sub.id)
+        // ── Clock-in reminder ──────────────────────────────────────────────────
+        if (
+          profile.clock_in_reminder_enabled &&
+          !hasActiveShift &&
+          profile.clock_in_notified_date !== dateStr &&
+          isInWindow(hours, minutes, profile.clock_in_reminder_time)
+        ) {
+          await Promise.all(
+            subs.map(async (sub) => {
+              const result = await sendPushNotification(sub, {
+                title: '⏰ Time to clock in!',
+                body: "Don't forget to start your shift for today.",
+                url: '/dashboard',
+                tag: 'clock-in-reminder',
+              })
+              if (result.success) clockInSent++
+              else if (result.stale) staleIds.push(sub.id)
+            })
+          )
+          await supabase
+            .from('profiles')
+            .update({ clock_in_notified_date: dateStr })
+            .eq('user_id', profile.user_id)
         }
-        await supabase
-          .from('profiles')
-          .update({ clock_in_notified_date: dateStr })
-          .eq('user_id', profile.user_id)
-      }
 
-      // ── Clock-out / log-time reminder ────────────────────────────────────────
-      if (
-        profile.clock_out_reminder_enabled &&
-        hasActiveShift && // fires when shift IS still running past this time
-        profile.clock_out_notified_date !== dateStr &&
-        isInWindow(hours, minutes, profile.clock_out_reminder_time)
-      ) {
-        for (const sub of subs) {
-          const result = await sendPushNotification(sub, {
-            title: '⏰ Still clocked in!',
-            body: "Your shift is still running — don't forget to clock out.",
-            url: '/dashboard',
-            tag: 'clock-out-reminder',
-          })
-          if (result.success) clockOutSent++
-          else if (result.stale) staleIds.push(sub.id)
+        // ── Clock-out / log-time reminder ──────────────────────────────────────
+        if (
+          profile.clock_out_reminder_enabled &&
+          hasActiveShift && // fires when shift IS still running past this time
+          profile.clock_out_notified_date !== dateStr &&
+          isInWindow(hours, minutes, profile.clock_out_reminder_time)
+        ) {
+          await Promise.all(
+            subs.map(async (sub) => {
+              const result = await sendPushNotification(sub, {
+                title: '⏰ Still clocked in!',
+                body: "Your shift is still running — don't forget to clock out.",
+                url: '/dashboard',
+                tag: 'clock-out-reminder',
+              })
+              if (result.success) clockOutSent++
+              else if (result.stale) staleIds.push(sub.id)
+            })
+          )
+          await supabase
+            .from('profiles')
+            .update({ clock_out_notified_date: dateStr })
+            .eq('user_id', profile.user_id)
         }
-        await supabase
-          .from('profiles')
-          .update({ clock_out_notified_date: dateStr })
-          .eq('user_id', profile.user_id)
-      }
-    }
+      })
+    )
 
     if (staleIds.length > 0) {
       await supabase.from('push_subscriptions').delete().in('id', staleIds)
