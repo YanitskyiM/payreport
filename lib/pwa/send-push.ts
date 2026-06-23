@@ -1,11 +1,5 @@
 import webPush from 'web-push'
 
-webPush.setVapidDetails(
-  process.env.VAPID_SUBJECT ?? 'mailto:admin@payreport.app',
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-)
-
 export type PushPayload = {
   title: string
   body: string
@@ -19,14 +13,30 @@ export type StoredSubscription = {
   keys_auth: string
 }
 
+// Lazily initialised so missing env vars at import time don't crash the module
+let vapidInitialised = false
+function ensureVapid() {
+  if (vapidInitialised) return
+  const subject = process.env.VAPID_SUBJECT ?? 'mailto:admin@payreport.app'
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const privateKey = process.env.VAPID_PRIVATE_KEY
+  if (!publicKey || !privateKey) {
+    throw new Error('VAPID keys are not configured (NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)')
+  }
+  webPush.setVapidDetails(subject, publicKey, privateKey)
+  vapidInitialised = true
+}
+
 /**
  * Sends a push notification to a single stored subscription.
- * Returns true on success, false if the subscription is stale (410/404).
+ * Returns { success, stale } — stale means the subscription is expired (410/404).
  */
 export async function sendPushNotification(
   subscription: StoredSubscription,
   payload: PushPayload
 ): Promise<{ success: boolean; stale: boolean }> {
+  ensureVapid()
+
   const pushSubscription: webPush.PushSubscription = {
     endpoint: subscription.endpoint,
     keys: {
@@ -47,4 +57,3 @@ export async function sendPushNotification(
     return { success: false, stale }
   }
 }
-
